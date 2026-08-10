@@ -82,3 +82,11 @@ clipboard-and-polling approach. No code is shared with it.
 
 Coffee Talk is a game by Toge Productions. This is an unofficial fan-made accessibility mod
 and is not affiliated with or endorsed by them.
+
+## License
+
+GNU General Public License v3.0 or later — see [LICENSE](LICENSE).
+
+This covers the mod's own source in `src/`. It does not extend to the third-party binaries in
+`libs/` (UniversalSpeech and the NVDA controller client, which carry their own licenses), and
+not to Coffee Talk itself, whose code and assets belong to Toge Productions.

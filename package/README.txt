@@ -129,3 +129,19 @@ CREDITS
 
 Mod by amock. Speech through UnityAccessibilityLib and UniversalSpeech.
 Coffee Talk is by Toge Productions.
+
+
+LICENSE
+
+This mod is free software under the GNU General Public License, version 3 or
+later. You may use, share and modify it, and the source is available at:
+
+  https://github.com/ObjectInSpace/coffee-talk-access
+
+It comes with NO WARRANTY. See the license for the full terms:
+
+  https://www.gnu.org/licenses/gpl-3.0.txt
+
+The license covers the mod itself. UniversalSpeech.dll and
+nvdaControllerClient.dll are separate third-party components under their own
+licenses, and Coffee Talk itself belongs to Toge Productions.
