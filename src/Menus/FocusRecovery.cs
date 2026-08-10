@@ -173,6 +173,28 @@ namespace CoffeeTalkAccess.Menus
                     return;
                 }
 
+                // ⚠ THE PROFILE PICKER NULLS ITS OWN SELECTION ON PURPOSE, AND RECOVERING THERE
+                // MOVES THE PLAYER. Pressing Enter flips a card open, and DoFilpToOptionAnimation
+                // sets `button.interactable = false` for the whole 0.6 s flip. The selected card is
+                // therefore not a valid Selectable for that moment, so FindEntryControl skipped it
+                // and selected a DIFFERENT card - reported as "when I press enter on the first one
+                // it moves focus to the third one".
+                //
+                // Live proof, log 26-8-10_17-54-25: focus was on "Slot 1 of 3, Drew"; Enter produced
+                // a recovery line, then "Slot 3 of 3, Barista" 80 ms later, and only THEN
+                // "[Profile] Drew, open". The game opened the RIGHT profile all along - the mod
+                // yanked the cursor away while it was doing so.
+                //
+                // A null selection on this screen is the game mid-transition, not a screen that
+                // needs rescuing, so we stand down while any card is animating or open. The open
+                // card is driven by Enter/Escape/X off `currentSelected`, not by a focused
+                // Selectable, so there is genuinely nothing to recover to until it closes again.
+                if (state == "SELECT_PROFILE" && IsProfileCardBusy())
+                {
+                    _nullSince = -1f;
+                    return;
+                }
+
                 // Start (or continue) timing this null.
                 if (_nullSince < 0f) _nullSince = Time.realtimeSinceStartup;
                 if (Time.realtimeSinceStartup - _nullSince < SettleSeconds) return;
@@ -235,6 +257,53 @@ namespace CoffeeTalkAccess.Menus
             if (phone == null) return false;
 
             return !phone.canOpenSmartPhone;
+        }
+
+        /// <summary>
+        /// True while any profile card is flipping or sitting open - i.e. while a null EventSystem
+        /// selection is the game's own doing rather than the gated-Select bug this class fixes.
+        ///
+        /// Reads `isAnimating` and `isOpen` off each TG_ProfileSlotFlipUI (both real fields,
+        /// verified by reflection over the shipped assembly; `isOpen` is public and `isAnimating`
+        /// private, hence AccessTools rather than a cast). Bound by STRING throughout so this file
+        /// keeps no compile-time dependency on a retail-only screen.
+        ///
+        /// Fails OPEN - if anything cannot be read we return false and recover as before, because
+        /// the pre-existing behaviour is the safer default on every other screen.
+        /// </summary>
+        private static bool IsProfileCardBusy()
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_ProfileUIManager");
+                if (mgrType == null) return false;
+
+                UnityEngine.Object mgr = UnityEngine.Object.FindObjectOfType(mgrType);
+                if (mgr == null) return false;
+
+                System.Collections.IList slots =
+                    AccessTools.Field(mgrType, "profileSlotUIList")?.GetValue(mgr) as System.Collections.IList;
+                if (slots == null) return false;
+
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    object slot = slots[i];
+                    if (slot == null) continue;
+
+                    Type t = slot.GetType();
+                    object animating = AccessTools.Field(t, "isAnimating")?.GetValue(slot);
+                    object open = AccessTools.Field(t, "isOpen")?.GetValue(slot);
+
+                    if (animating is bool && (bool)animating) return true;
+                    if (open is bool && (bool)open) return true;
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

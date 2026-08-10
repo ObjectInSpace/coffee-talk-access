@@ -368,11 +368,22 @@ namespace CoffeeTalkAccess.FullGame
                 if (owner == null) return null;
                 Type t = owner.GetType();
 
-                System.Reflection.PropertyInfo p = AccessTools.Property(t, member);
-                if (p != null) return p.GetValue(owner, null) as T;
-
+                // ⚠ FIELD FIRST ON THIS SCREEN, deliberately inverting the usual order. Every
+                // member read here is a real FIELD on both shipped assemblies (verified by
+                // reflection), and AccessTools.Property LOGS A WARNING when it finds nothing - so
+                // asking for a property first printed five "Could not find property for type
+                // TG_ProfileSlotFlipUI" lines on EVERY focus move, five more per card, burying the
+                // real content of the log (seen throughout 26-8-10_17-54-25).
+                //
+                // The property fallback is KEPT, because the field-vs-property trap is real
+                // elsewhere in this codebase (memory: coffee-talk-decompile-field-vs-property) and
+                // costs nothing when the field hits first. Only the ORDER changed, and only here:
+                // where a member genuinely is a property, the other readers still try that first.
                 System.Reflection.FieldInfo f = AccessTools.Field(t, member);
-                return f?.GetValue(owner) as T;
+                if (f != null) return f.GetValue(owner) as T;
+
+                System.Reflection.PropertyInfo p = AccessTools.Property(t, member);
+                return p?.GetValue(owner, null) as T;
             }
             catch
             {
