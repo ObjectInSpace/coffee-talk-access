@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.5", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.6", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -488,6 +488,11 @@ namespace CoffeeTalkAccess
             // inside OpenSaveMenu, which then waits out a realtime delay and a fade before the grid
             // takes focus. Speaking at fill time meant the summary was cut off by the focused day.
             FullGame.CalendarPatches.EntryWatcher.Update();
+            // The smartphone has the SAME gap, and it produced the worst version of it: OpenSmartPhone
+            // only starts a 0.6s tween, so announcing from its postfix described a phone that was not
+            // open yet while the cafe underneath still owned focus (log 26-8-10_18-17-43: "[Phone]
+            // Smartphone..." then "[Focus] Coffee" 82ms later).
+            FullGame.SmartPhonePatches.PhoneEntryWatcher.Update();
             ReportDevicesIfChanged();
 
             if (Input.GetKeyDown(TestKey))

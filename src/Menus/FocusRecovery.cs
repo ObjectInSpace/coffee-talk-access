@@ -516,6 +516,29 @@ namespace CoffeeTalkAccess.Menus
                 return s;
             }
 
+            // ⚠ NO CROSS-SCREEN FALLBACK ON THE PHONE. Everywhere else, handing back the best
+            // candidate from outside the scope beats leaving the player with no cursor at all. The
+            // phone is the exception, because it is drawn OVER a live café whose brewing buttons
+            // stay active and interactable - so "the first valid control anywhere" is reliably a
+            // BREWING control, and selecting it silently moves the player out of the screen they
+            // just opened.
+            //
+            // Live proof, log 26-8-10_18-17-43: the phone opened and focus landed on "Coffee" (an
+            // ingredient) and then "Brewpad" (the brew/phone switch cursor the game shows when the
+            // phone is opened FROM brewing). Reported as "phone navigation doesn't seem to be
+            // working" and "the brewpad didn't get initial focus" - the same event from two sides.
+            //
+            // Returning null here means recovery does nothing this frame and tries again on the
+            // next, which is correct: the phone's own buttons become interactable when its 0.6 s
+            // tween completes, and the watcher-based announcement now waits for the same moment.
+            if (fallback != null && state != null && state.StartsWith("PHONE"))
+            {
+                MelonLogger.Msg("[Focus] nothing selectable inside the phone yet on " + state
+                    + " (best outside candidate was " + fallback.gameObject.name
+                    + ") - standing down rather than selecting the cafe behind it.");
+                return null;
+            }
+
             if (fallback != null)
             {
                 MelonLogger.Warning("[Focus] no selectable inside the scoped panel on " + state

@@ -91,17 +91,86 @@ namespace CoffeeTalkAccess.FullGame
                     return;
                 }
 
-                Announce("Smartphone. Social media, music, drink recipes, newspaper.");
-
-                // NOTE: the phone opens with NO EventSystem selection in keyboard mode - the game's
-                // socialMediaAppButton.Select() at TG_SmartPhoneManager:248-252 is gated on JOYSTICK
-                // and has no else branch, so on a keyboard the whole phone is unnavigable (reported
-                // live 2026-08-10). That is NOT fixed here: it is one instance of a bug class the
-                // game repeats on at least six screens, handled centrally by Menus.FocusRecovery.
+                // ⚠ DO NOT ANNOUNCE HERE - THE PHONE IS NOT OPEN YET.
+                //
+                // OpenSmartPhone only STARTS a 0.6 s tween (smartPhonePanel.DOAnchorPosY(10f, 0.6f))
+                // and returns. Everything that makes the phone real happens in that tween's
+                // OnComplete: ChangeGameState(GameState.SMART_PHONE), the entry Select(), and
+                // SetSwitchCursorSmartphone(). So a POSTFIX here runs while the state is still
+                // TWEENING and the café underneath still owns focus.
+                //
+                // Live proof, log 26-8-10_18-17-43: "[Phone] Smartphone..." at 18:21:11.696 and
+                // "[Focus] Coffee" - a BREWING ingredient - 82 ms later. The player heard the phone
+                // announced and then found themselves on the brew pad. Reported as "phone navigation
+                // doesn't seem to be working" AND "the brewpad didn't get initial focus": one cause,
+                // two symptoms, because the announcement described a screen that did not exist yet.
+                //
+                // Deferred to a watcher polled from OnUpdate, which speaks when the game's own state
+                // actually reports a PHONE_* screen. Same shape and same reason as
+                // AchievementPatches.EntryWatcher and CalendarPatches' entry line: the screen becomes
+                // live inside a DOTween callback with no method to postfix.
+                PhoneEntryWatcher.Arm();
             }
             catch (Exception e)
             {
                 MelonLogger.Warning("[Phone] open hook threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Waits for the phone to be genuinely open before announcing it.
+        ///
+        /// ARMED by the OpenSmartPhone postfix, which fires ~0.6 s too early (see there). Polled
+        /// from OnUpdate; speaks on the first frame the game's own state machine reports a PHONE_*
+        /// screen, which is set inside the tween's OnComplete alongside the entry Select().
+        ///
+        /// Bounded rather than open-ended: an armed watcher that never saw its screen would
+        /// eventually announce the phone over some unrelated later screen. Same shape as
+        /// NameScreenWatcher and AchievementPatches.EntryWatcher.
+        /// </summary>
+        internal static class PhoneEntryWatcher
+        {
+            private static bool _armed;
+            private static float _expiry;
+
+            internal static void Arm()
+            {
+                _armed = true;
+                // The tween is 0.6 s; allow generous margin for a slow frame without arming forever.
+                _expiry = Time.realtimeSinceStartup + 5f;
+            }
+
+            internal static void Reset()
+            {
+                _armed = false;
+            }
+
+            internal static void Update()
+            {
+                try
+                {
+                    if (!_armed) return;
+
+                    if (Time.realtimeSinceStartup > _expiry)
+                    {
+                        // The phone never came up. Say nothing: describing a screen that did not
+                        // appear is worse than silence, and the log records the miss.
+                        _armed = false;
+                        MelonLogger.Msg("[Phone] open watcher expired without reaching a phone screen.");
+                        return;
+                    }
+
+                    string state = AccessMod.ReadControllerState();
+                    if (state == null || !state.StartsWith("PHONE")) return;
+
+                    _armed = false;
+                    Announce("Smartphone. Social media, music, drink recipes, newspaper.");
+                }
+                catch (Exception e)
+                {
+                    _armed = false;
+                    MelonLogger.Warning("[Phone] entry watcher threw: " + e.Message);
+                }
             }
         }
 
