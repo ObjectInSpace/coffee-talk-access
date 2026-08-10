@@ -6,9 +6,9 @@ language picker, name entry, the opening cutscene, story dialogue and the brewin
 through NVDA, JAWS, SAPI or a braille display, and it supplies keyboard navigation for menus
 that the game otherwise only lets you drive with a gamepad.
 
-⚠ **Full-game users need v0.7.0 or later.** v0.6.0 was compiled against the demo and hard-binds
-`TG_NameKeys.playerNameInput`, which the full game changed from a public `InputField` to a
-private `TG_CustomInputField` — so it throws on the name entry screen there.
+⚠ **Full-game users need v0.7.0 or later** (current release: **v0.8.0**). v0.6.0 was compiled
+against the demo and hard-binds `TG_NameKeys.playerNameInput`, which the full game changed from a
+public `InputField` to a private `TG_CustomInputField` — so it throws on the name entry screen there.
 
 Installation instructions for players are in [package/README.txt](package/README.txt).
 
@@ -16,27 +16,26 @@ Installation instructions for players are in [package/README.txt](package/README
 
 This project distinguishes **built** from **confirmed working**, because it has repeatedly
 found bugs in code that was already marked done — three screens audited, thirteen defects, and
-not one of them a missing hook. The bugs were in the words, not the wiring.
+not one of them a missing hook. The bugs were in the words, not the wiring. So the list below is
+graded by what has actually FIRED in a live retail run, not by what compiles.
 
-- **Working, confirmed live on the demo** — loader and speech, the language picker, main menu,
-  options, name entry, the opening cutscene, press-any-key prompts and credit lines.
-  Story dialogue is confirmed by the player, though the log that recorded it has since been lost.
-- **Built, not yet exercised in game** — brewing (ingredients, glass contents, serve result,
-  live stats and hover preview), the chat log, popups, drink recipes, achievements, the
-  save/load calendar, gallery, ending epilogues, the newspaper reader, the music app and
-  social media.
-- **Blocked on the demo, unblocked on the full game** — the smartphone panels. `canOpenSmartPhone`
-  is false on the demo, so the phone animates in and is pulled straight back off screen. The gate
-  is a scene singleton (`TG_ExpoBuildManager`) the full game never instantiates, and the code is
-  otherwise identical, so the app readers should run there unchanged — untested as yet.
-- **Verified against the full game, not yet played** — 46/46 types, 102/102 string-bound members
-  and 64/64 Harmony targets resolve. That proves the hooks *bind*; it says nothing about whether
-  they *say the right thing*, which is where this project keeps finding its bugs.
+- **Confirmed firing on the RETAIL build** (v0.8.0, logs `26-8-10_17-39-3` … `18-17-43`) — story
+  dialogue (`[Speak/Say]`), brewing (ingredients, per-ingredient stat previews, the glass, the
+  served drink), the profile picker, the language picker, name entry, the opening cutscene and
+  press-any prompts, pop-ups, the smartphone, the music app (track/artist/album), the drink
+  recipes app (per-category counts with locked totals), the gallery and comics, and achievements.
+- **Built and bound, but NEVER executed a line in play** — the chat log, the save/load calendar,
+  the social media detail pane, the newspaper reader (both the phone archive and the morning
+  paper), the ending epilogues, and latte art. These are the honest gaps.
+- **Verified offline on both builds** — 46/46 types, 102/102 string-bound members and 64/64
+  Harmony targets resolve. That proves the hooks *bind*; it says nothing about whether they *say
+  the right thing*, which is where this project keeps finding its bugs.
 
-The gate has moved: it is no longer access to the full game, but **a playthrough of it**. Two
-tools automate what used to need a live run — `tools/verify-hook-targets.ps1` (string-bound
-lookups, auto-detects which build it is auditing) and `tools/verify-patch-targets.ps1` (reads
-`[HarmonyPatch]` attributes out of the compiled DLL, so it cannot drift from the code).
+The gate is now **a complete playthrough**: the early game is well exercised, and the further in
+you go the thinner the evidence gets. Two tools automate what used to need a live run —
+`tools/verify-hook-targets.ps1` (string-bound lookups, auto-detects which build it is auditing)
+and `tools/verify-patch-targets.ps1` (reads `[HarmonyPatch]` attributes out of the compiled DLL,
+so it cannot drift from the code).
 
 ## Building
 

@@ -2,7 +2,43 @@
 
 **Last updated:** 2026-08-10.
 
-## ✅ LATEST (2026-08-10): FIRST LIVE RETAIL RUNS — the profile picker WORKS
+## 🎉 v0.8.0 (2026-08-10): THE FULL GAME IS PLAYABLE — graded by what FIRED, not what built
+
+Released as **0.8.0** rather than another patch bump: retail support went from "throws on the name
+entry screen" to "played through the opening of the game" in one session. Pushed to
+`origin/main` and tagged.
+
+**CONFIRMED FIRING in live retail runs** (logs `26-8-10_17-39-3` … `18-17-43`) — this list is
+evidence, not intent:
+
+| System | Evidence |
+|---|---|
+| Story dialogue | 33 × `[Speak/Say]`, e.g. `Freya: Hey Drew, how's the night so far?` |
+| Brewing | ingredients + per-ingredient stat previews, `Glass full, cursor on Brew`, `Brewed: Cappuccino` |
+| Smartphone | 17 × `[Phone]`, and app panels genuinely open |
+| Music app | 27 ×, e.g. `Now playing, Rough Day, by Aremy Jendrew, from Chill And Smile` |
+| Drink recipes app | `All drinks, 30 recipes, 25 still locked` / `Coffee, 9 recipes, 6 still locked` |
+| Profile picker | 103 × `[Focus] Slot`, 14 × `[Profile]` |
+| Gallery + comics | 13 ×, `Comic 0 of 8` … |
+| Language picker | 9 × `[Language]` |
+| Pop-ups | 12 × | 
+| Name entry, cutscene, press-any | `[Name]`, `[Cutscene/*]` |
+| Achievements | 2 × |
+
+⚠ **NEVER EXECUTED A LINE IN PLAY, despite being built and bound:** chat log, save/load calendar,
+social media detail pane, newspaper (both readers), ending epilogues, latte art. **Do not describe
+these as working.** They are the honest gaps and they are stated as such in the player README.
+
+**Dialogue's lost receipt is RE-ESTABLISHED.** `[Speak/Say]` lines exist in a surviving retail log,
+so the claim that was misreported four times (twice as "never fires") now has a file behind it
+again. See [[coffee-talk-sweep-all-logs]].
+
+**Six patch releases were folded into this one milestone** (0.7.1 diagnostic false alarm, 0.7.2
+retail language picker, 0.7.3 one-cursor fix, 0.7.4 card-flip focus theft, 0.7.5 mode-switch
+churn, 0.7.6 phone announce timing). Each is preserved in git history; the player README carries a
+single 0.8.0 entry, because a player does not need six same-day patch notes.
+
+## ✅ Earlier the same day: FIRST LIVE RETAIL RUNS — the profile picker WORKS
 
 The mod is installed on retail (MelonLoader v0.7.1 x86 copied from the demo) and has now RUN.
 Three runs, logs `26-8-10_17-14-43`, `_17-16-8`, `_17-17-11`. **This is the first live evidence

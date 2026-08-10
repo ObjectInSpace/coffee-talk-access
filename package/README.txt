@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.7.6
+Version 0.8.0
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,72 +10,37 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.7.6
+WHAT IS NEW IN 0.8.0
 
-  - Fixed the smartphone. Opening it announced the phone about half a second
-    before it was actually there, so the cursor was still on the coffee
-    ingredients behind it - the phone appeared not to navigate, and you could
-    end up on the brew pad instead. The phone is now announced when it is
-    really open, and the mod will no longer hand you a brewing control while
-    the phone is on screen.
+This is the release where the full game actually works. Everything below was
+tested by playing the retail game, not just by reading its code.
 
-WHAT IS NEW IN 0.7.5
+  - THE FULL GAME IS SUPPORTED AND PLAYED THROUGH. Version 0.6.0 was built
+    against the demo and crashes on the full game's name entry screen, so if
+    you have the full game you need this version.
 
-  - Switching between the keyboard and the gamepad is much quieter. The game
-    re-checks which device you are using many times a second, and each check
-    could re-read the "press any key" prompt and move your cursor. The prompt
-    now speaks once per screen, and if the cursor is lost you are put back on
-    the control you were already on instead of somewhere else.
+  - Confirmed working by ear and in the logs: story dialogue, the brewing
+    screen (ingredients, what each one adds, the glass, and the served
+    drink), the profile picker, the language picker, name entry, the opening
+    cutscene, pop-ups, the smartphone with its music and drink recipe apps,
+    and the gallery and comics.
 
-  - Note: switching TO a gamepad still jumps to the first profile. That is the
-    game moving its own cursor, and it does the same without the mod.
+  - The smartphone works. The demo blocks it entirely, so every phone screen
+    is new here. Music announces the track, artist and album; drink recipes
+    announce each category with how many are still locked.
 
-WHAT IS NEW IN 0.7.4
+  - The profile picker is new, and it is the first screen the full game shows
+    you. It was previously silent with dead arrow keys, which left no way
+    past it without a gamepad.
 
-  - Fixed the profile picker jumping to another profile when you press Enter.
-    Opening a card briefly disables it while it turns over, and the mod
-    mistook that for a screen with no cursor and moved you elsewhere. The
-    right profile was always the one being opened; only the focus jumped.
+  - Many smaller fixes found by playing: the picker no longer opens the wrong
+    profile or jumps to a different card, switching between keyboard and
+    gamepad is far quieter, and the phone no longer hands you a coffee
+    ingredient instead of the phone.
 
-  - Removed a flood of "Could not find property" lines from the log.
-
-WHAT IS NEW IN 0.7.3
-
-  - Fixed the profile picker selecting the wrong profile. Pressing Enter could
-    open a different profile from the one just announced, because the mod and
-    the game were tracking the cursor separately. The mod now tells the game
-    about every cursor move, so there is only ever one cursor.
-
-
-WHAT IS NEW IN 0.7.2
-
-  - The language picker now speaks on the full game. It announces each
-    language and its position ("English, 2 of 11") as you press left and
-    right, then Enter chooses it. The full game replaced the demo's grid of
-    flags with a single spinner, so the old handling had nothing to read.
-
-
-WHAT IS NEW IN 0.7.1
-
-  - Fixed a startup warning that claimed two screens would speak everything
-    twice. They did not; the check itself was wrong. Nothing you hear changes,
-    but the log is trustworthy again.
-
-
-WHAT IS NEW IN 0.7.0
-
-  - Works with the FULL GAME. Version 0.6.0 was built against the demo and
-    breaks on the full game's name entry screen, so if you have the full game
-    you need this version.
-
-  - Reads the profile picker, the screen the full game shows first, where you
-    choose or create a save profile. It was previously silent, and the arrow
-    keys did nothing on it, which left no way past it without a gamepad.
-
-  - The smartphone screens (newspaper, drink recipes, music, social media) can
-    now be reached. The demo blocks the phone, so these have never run before;
-    please report anything that sounds wrong.
-
+  - Not yet exercised in play, so treat as unproven: the chat log, the
+    save/load calendar, the social media app, the newspaper, and the ending
+    epilogues. Reports on these are especially welcome.
 
 WHAT YOU NEED
 
@@ -202,10 +167,13 @@ plus which screen you were on and what you pressed.
 
 KNOWN LIMITS
 
-  - Much of the full game's content has been checked only against the game's
-    code, not yet by playing it. The screens most likely to have rough edges
-    are the profile picker, the smartphone apps, the save/load calendar, the
-    gallery and the ending epilogues. Reports are genuinely useful here.
+  - No one has finished a whole playthrough with this mod yet. The early game
+    is well tested; the later it gets, the less it has been exercised.
+  - These screens have never run in play and may have rough edges: the chat
+    log, the save/load calendar, the social media app, the newspaper, and the
+    ending epilogues. Reports on them are genuinely useful.
+  - Switching TO a gamepad jumps the cursor to the first profile. That is the
+    game moving its own cursor; it does the same without the mod.
   - Latte art is a drawing minigame. Only whether you served the drink is
     scored, not the picture, so the mod lets you serve without drawing. The
     drawing itself is still not accessible.
