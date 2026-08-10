@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.1", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.2", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -162,6 +162,16 @@ namespace CoffeeTalkAccess
                 if (HarmonyInstance == null)
                     harmony.PatchAll(typeof(AccessMod).Assembly);
 
+                // The retail language picker, attached MANUALLY because its target method exists
+                // only in the full game. TG_InitLanguageSettingMenu ships in both builds but
+                // RefreshLanguageUI does not, so a [HarmonyPatch] attribute naming it would make
+                // PatchAll THROW on the demo and take every other hook down with it. Absence here is
+                // an expected build difference, not a failure - hence a plain informational line.
+                if (Menus.LanguagePickerPatches.TryAttach(harmony))
+                    MelonLogger.Msg("[Patch] Language picker hook attached (full-game build).");
+                else
+                    MelonLogger.Msg("[Patch] No retail language picker on this build (demo) - skipped.");
+
                 int patched = 0;
                 foreach (System.Reflection.MethodBase m in harmony.GetPatchedMethods())
                 {
@@ -299,6 +309,17 @@ namespace CoffeeTalkAccess
                 live.Add(m.DeclaringType.FullName + "." + m.Name);
             }
 
+            // Hooks that exist on ONE build only. Absence is a build difference, not a fault, so
+            // these are reported as information and never counted as missing. Keeping them in a
+            // SEPARATE table (rather than dropping them from verification) means we still learn
+            // which build we are on from the log, without a red error either way.
+            string[,] optional =
+            {
+                // Retail's language picker is a spinner with no per-language Selectable; the demo's
+                // is a grid of flag buttons. RefreshLanguageUI exists only in the full game.
+                { "TG_InitLanguageSettingMenu", "RefreshLanguageUI" },
+            };
+
             int missing = 0;
             for (int i = 0; i < expected.GetLength(0); i++)
             {
@@ -307,6 +328,13 @@ namespace CoffeeTalkAccess
 
                 missing++;
                 MelonLogger.Error("[Patch] MISSING: " + key + " - that screen will be silent.");
+            }
+
+            for (int i = 0; i < optional.GetLength(0); i++)
+            {
+                string key = optional[i, 0] + "." + optional[i, 1];
+                MelonLogger.Msg("[Patch] optional hook " + key + ": "
+                    + (live.Contains(key) ? "live." : "not present on this build."));
             }
 
             if (missing > 0)

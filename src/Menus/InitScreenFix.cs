@@ -6,7 +6,18 @@ using UnityEngine.EventSystems;
 namespace CoffeeTalkAccess.Menus
 {
     /// <summary>
-    /// Repairs a GAME bug that leaves the language picker unnavigable in keyboard mode.
+    /// Repairs a GAME bug that leaves the DEMO's language picker unnavigable in keyboard mode.
+    ///
+    /// ⚠ THIS FILE IS DEMO-ONLY, AND IT FAILS SILENTLY ON RETAIL BY DESIGN. Retail redesigned the
+    /// picker from a grid of flag buttons into a single label with prev/next arrows, and
+    /// `SelectAnyFlag` DOES NOT EXIST there (verified by reflection over both assemblies). The
+    /// lookup below returns null and this postfix does nothing - correct, because retail's screen
+    /// has no per-language Selectable to restore in the first place.
+    ///
+    /// The consequence is that retail's picker is narrated by a DIFFERENT file,
+    /// Menus.LanguagePickerPatches, which hooks `RefreshLanguageUI` (retail-only) and speaks the
+    /// spinner's current value. If you are here because the language picker is silent, check WHICH
+    /// BUILD you are on before touching this file - the retail path is not this one.
     ///
     /// THE BUG (in Coffee Talk, not in this mod - verified 2026-08-09 from a live log):
     /// CheckActiveController() runs every OnGUI and switches to KEYBOARD mode as soon as

@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.7.1
+Version 0.7.2
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -8,6 +8,14 @@ cutscene, story dialogue, and the brewing screen, and it adds keyboard
 navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
+
+
+WHAT IS NEW IN 0.7.2
+
+  - The language picker now speaks on the full game. It announces each
+    language and its position ("English, 2 of 11") as you press left and
+    right, then Enter chooses it. The full game replaced the demo's grid of
+    flags with a single spinner, so the old handling had nothing to read.
 
 
 WHAT IS NEW IN 0.7.1
