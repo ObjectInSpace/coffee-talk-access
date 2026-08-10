@@ -238,12 +238,31 @@ namespace CoffeeTalkAccess.Menus
             }
         }
 
-        /// <summary>Reads playerNameInput.text defensively - a null field must not break typing.</summary>
+        /// <summary>
+        /// Reads playerNameInput.text defensively - a null field must not break typing.
+        ///
+        /// ⚠ READ BY REFLECTION BECAUSE RETAIL CHANGED THIS FIELD, and it is the only member in the
+        /// whole mod that retail moved. Measured 2026-08-10 by building against both assemblies:
+        ///   demo:   public  InputField           playerNameInput
+        ///   retail: private TG_CustomInputField  playerNameInput
+        /// Two independent breaks in one field - the TYPE changed and the ACCESSIBILITY changed - so
+        /// `keys.playerNameInput` does not compile against retail at all. This is the one place the
+        /// "one assembly, different scene data" rule in PLAN.md does NOT hold, and it sits on the
+        /// critical path: the name screen is the step straight after the profile picker.
+        ///
+        /// Casting to InputField is safe on both, since TG_CustomInputField DERIVES from InputField
+        /// (it only adds OnSelect/OnDeselect events), so `.text` means the same thing either way.
+        /// Reflection over the field NAME - unchanged between the builds - is what spans them.
+        /// </summary>
         private static string ReadField(TG_NameKeys keys)
         {
             try
             {
-                InputField field = keys != null ? keys.playerNameInput : null;
+                if (keys == null) return string.Empty;
+
+                InputField field =
+                    AccessTools.Field(keys.GetType(), "playerNameInput")?.GetValue(keys) as InputField;
+
                 return field == null || field.text == null ? string.Empty : field.text;
             }
             catch

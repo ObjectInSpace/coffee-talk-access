@@ -354,6 +354,32 @@ namespace CoffeeTalkAccess.Menus
         }
 
         /// <summary>
+        /// Names a focused profile slot, searching the focused object and its parents.
+        ///
+        /// Same arrangement as every other row screen: TG_ProfileSlotFlipUI extends TG_Button and
+        /// the navigation graph targets its child `button` (TG_ProfileUIManager.SetNavigation
+        /// assigns selectOnLeft/selectOnRight to `profileSlotUIList[i].button`), while the name and
+        /// information Texts are private fields on the row above it. The object-local component scan
+        /// would find neither, so the slot would announce "unlabeled" - on the FIRST screen of the
+        /// retail game.
+        /// </summary>
+        private static string GetProfileSlotLabel(GameObject go)
+        {
+            try
+            {
+                Type t = AccessTools.TypeByName("TG_ProfileSlotFlipUI");
+                if (t == null) return string.Empty;
+
+                Component row = go.GetComponentInParent(t);
+                return FullGame.ProfileSelectPatches.DescribeSlot(row as MonoBehaviour);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
         /// Names a music playlist row, searching the focused object and its parents.
         ///
         /// Same arrangement as the friend list and the recipe rows: the EventSystem focuses the
@@ -461,6 +487,13 @@ namespace CoffeeTalkAccess.Menus
                 // Texts are found in hierarchy order, which puts the artist first as often as not.
                 string songLabel = GetSongRowLabel(go);
                 if (!string.IsNullOrEmpty(songLabel)) return songLabel;
+
+                // Profile slots, the same parent-chain arrangement once more. This one matters most
+                // of all: on retail the picker is the FIRST interactive screen (PRESS_ANY_KEY goes
+                // straight to OpenSelectProfile), so without this the player's first contact with the
+                // game is three cards that all announce "unlabeled".
+                string profileLabel = GetProfileSlotLabel(go);
+                if (!string.IsNullOrEmpty(profileLabel)) return profileLabel;
 
                 MonoBehaviour[] comps = go.GetComponents<MonoBehaviour>();
                 for (int i = 0; i < comps.Length; i++)

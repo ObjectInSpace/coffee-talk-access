@@ -10,7 +10,34 @@ full game is the destination.
 > **[new]** items come from the `docs/text-sources.md` survey. Nothing here is discarded work — the
 > ordering is a proposal, and the phase boundaries are the part most worth arguing with.
 
-## ▶ Next up (2026-08-10)
+## ▶ Next up (2026-08-10, RETAIL INSTALLED)
+
+**The full game is installed at `D:\SteamLibrary\steamapps\Common\Coffee Talk`, and the Phase 6
+audit has been run against it. Phase 6's blocked items are now CLOSED — see the new section
+"Phase 6 — RESULTS" below.** Headline: **46/46 types, 102/102 members and 64/64 Harmony patch
+targets resolve on retail**, the `TG_CutsceneManager` landmine did NOT go off, and both phone gates
+are code-identical to the demo (so the four phone readers should finally execute).
+
+**Two real defects were found and fixed, and one of them broke the build outright:**
+
+1. ⚠ **`TG_NameKeys.playerNameInput` is the ONE member retail moved** — `public InputField` on the
+   demo, `private TG_CustomInputField` on retail. Two breaks in one field (type AND visibility), so
+   the mod did not even COMPILE against retail. Now read by reflection. **This is the single
+   counterexample to this file's "retail differences are serialized scene data, not different code"
+   rule, and it sat on the critical path.**
+2. ⚠ **`SELECT_PROFILE` — a screen the demo never shows, which is the FIRST interactive screen of
+   the retail game** (`TG_MainMenuManager:230` sends PRESS_ANY_KEY straight into it). It has the
+   JOYSTICK-gate bug, so on a keyboard it opened with no cursor: unnavigable AND silent. A blind
+   player was stopped before reaching the main menu. Built as `src/FullGame/ProfileSelectPatches.cs`
+   + a `FocusRecovery` whitelist entry. `MOD_MENU` (Steam Workshop, also retail-only) has the same
+   bug and got the same recovery.
+
+⚠ **NOTHING BELOW HAS RUN IN THE RETAIL GAME YET.** MelonLoader is not installed there. All of the
+above is offline verification — strong evidence about BINDING, and no evidence at all about
+BEHAVIOUR. The profile screen in particular has never been seen by anyone. **The next action is
+still a live run, and now it is a live run on retail.**
+
+## ▶ Previous next-up (2026-08-10)
 
 **The newspaper reader is BUILT** (item **A**, `src/FullGame/NewspaperAppPatches.cs`) — but read
 the ⚠ on item A before touching it: the player chose to hook only the game's own app rather than
@@ -566,7 +593,14 @@ retail, and the demo is post-2021-Edition, so that update did not re-engine the 
 MelonLoader + x86 native speech DLLs are correct for retail. ⚠ The Microsoft Store build is the
 exception: it is UWP-packaged and untested; prefer Steam or GOG.
 
-⚠ **Retail/demo differences are SERIALIZED SCENE DATA, not different code.** `TG_Static` holds
+⚠ **PARTLY FALSIFIED 2026-08-10 — see the exception below before relying on this.** The rule held
+for 46 types and 101 of 102 members, and it correctly predicted that the phone gates and the
+cutscene hook would survive. But it is a strong tendency, NOT a guarantee: retail changed
+`TG_NameKeys.playerNameInput` from `public InputField` to `private TG_CustomInputField`, which
+broke the BUILD. "Mostly one assembly" is the accurate claim; the audit is what establishes it each
+time, and the audit is cheap.
+
+⚠ **Retail/demo differences are MOSTLY SERIALIZED SCENE DATA, not different code.** `TG_Static` holds
 both `SCENE_INGAME` ("InGameScene") and `SCENE_INGAME_DEMO` ("InGameDemoScene"), and the demo
 also carries `mainMenuGamePanelDemo`, `inGamePausePanelDemo`, `cutsceneObjectDemo` and
 `OPENING_CUTSCENE_DEMO`. One assembly, different objects. So retail is unlikely to rename our
@@ -596,12 +630,58 @@ targets wholesale — but it WILL reach code paths the demo never runs.
 the string-named types/members AND the base-class override chains, and prints the expected
 counts to compare against. It is the single highest-value first action on a retail binary.
 
-Remaining, genuinely blocked on the binary:
+### Phase 6 — RESULTS (2026-08-10, run against the installed retail build)
 
-- ⬜ Re-run the reflection probe against the retail assembly (names may differ from the demo).
-- ⬜ Daily cutscenes — see the landmine above. `TG_CutsceneManager` has exactly ONE subclass on
-  the demo (`TG_OpeningCutSceneManager`); enumerate them again on retail before assuming cover.
-- ⬜ Save/load across real profiles.
+- ✅ **Reflection probe re-run on retail: 46/46 types, 102/102 members, 0 missing.**
+  `tools\verify-hook-targets.ps1 -GameDir "D:\SteamLibrary\steamapps\Common\Coffee Talk"`.
+  It now also DETECTS which build it is looking at (by probing for retail-only types) and prints
+  the cross-build shape of `playerNameInput`, so the one field that moved can never fail silently.
+- ✅ **NEW: `tools\verify-patch-targets.ps1` — 64/64 Harmony targets resolve, on BOTH builds.**
+  Reads the `[HarmonyPatch]` attributes out of the COMPILED mod DLL, so unlike the hand-maintained
+  list it cannot drift from the code. This is the offline form of "did the hooks attach".
+- ✅ **THE CUTSCENE LANDMINE DID NOT GO OFF.** `TG_CutsceneManager` still has exactly ONE subclass
+  on retail (`TG_OpeningCutSceneManager`), so daily cutscenes are covered by the existing hook.
+  This was the flagged retail risk and it is now closed by measurement rather than by hope.
+- ✅ **The phone gates are CODE-IDENTICAL between the builds.** `canOpenSmartPhone = true` in
+  `TG_SmartPhoneManager.Init:122` and the newspaper's `pleaseSubscribeObject` branch both turn on
+  `TG_GenericSingelton<TG_ExpoBuildManager>.Instance`, a SCENE singleton retail does not
+  instantiate. So the demo blockage was never a code difference, and **items A/B/C/D (newspaper,
+  recipes, music, social media) should execute for the first time on retail with no changes.**
+  ⚠ `TG_ToggleBlockSmartPhoneCommand` still blocks the phone per-scene from the story, so a phone
+  that refuses to open at some story beat is the GAME's intent, not a mod fault.
+- ✅ **Retail is one assembly with ~430 more types, and almost none of it is story code**: Steam
+  Workshop modding (`LapinerTools.*`, `TG_ModsManager`, `TG_ModManagerUI`), DLC plumbing
+  (`TG_DLCManager`), `TG_SteamManager`, and a video player. The State enum gained exactly ONE
+  value: `MOD_MENU`.
+- ⚠ **The two NEW screens both carry the JOYSTICK-gate bug** (`TG_ProfileUIManager
+  .SelectFirstButton:252`, `TG_ModManagerUI:121`), which is why `FocusRecovery` grew two entries.
+  **The bug class this project swept for on the demo is alive and well in retail-only code** — the
+  sweep's value was the PATTERN, not the seven sites it happened to find.
+- ⬜ **Save/load across real profiles — still open, and now testable.** The profile picker is
+  built but has never run; the calendar's four audit fixes are still unconfirmed.
+
+### The profile picker, in detail (`src/FullGame/ProfileSelectPatches.cs`)
+
+- **The screen is three cards in a row, navigated LEFT/RIGHT** (`SetNavigation` assigns only
+  `selectOnLeft`/`selectOnRight`). Announcing up/down would send the player pressing dead keys.
+- **A card FLIPS.** Activating one runs `FlipToOptionAnimation`, replacing the info face with Load
+  and Delete. Those two are **not in any navigation graph** — `HandleAButton`/`HandleBButton`/
+  `HandleXButtonCurrentSelectProfileButton` invoke them directly off `currentSelected`. So the flip
+  produces no focus change, no cursor movement and no sound: **completely inaudible**, and the
+  affordances are undiscoverable by pressing keys. Hence the open card speaks its KEYS.
+- **Hooked on `SelectInfoButton`, not on the click.** It is the completion callback of both flip
+  animations, so it is the only point where `isOpen` is final and the buttons are interactable
+  again (`DoFilpToOptionAnimation` holds `button.interactable = false` across two 0.3 s tweens).
+  Its own body is JOYSTICK-gated, but a POSTFIX runs even when the body no-ops — which is exactly
+  the keyboard case.
+- ⚠ **Delete is deliberately left gamepad-only.** `HandlerKeyboard` reads only Submit/Confirm/
+  SmartPhoneToggle/Escape (rule 2), so nothing reaches `XButtonPressed`. Rather than invent a key
+  for an irreversible action on a screen where the MOD supplies the cursor, the card says so aloud.
+  Stating the gap beats both silence and a surprise delete key.
+- **Both types ship in the DEMO assembly too** (only the scene data differs), so these hooks are
+  REQUIRED, not optional — verified on both DLLs. The mod-manager types are genuinely retail-only
+  and are therefore reached by string lookup, which is why `FocusRecovery.FindPanelScope` takes a
+  type NAME rather than a type.
 
 ## Phone content from available data (planned 2026-08-10, not started)
 

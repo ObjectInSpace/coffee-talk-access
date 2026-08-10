@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.6.0", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.0", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -281,6 +281,13 @@ namespace CoffeeTalkAccess
                 { "TG_ComicMenuManager", "SetLargeImage" },
                 { "TG_ComicMenuManager", "SetBiggestImage" },
                 { "TG_EndingCutsceneItem", "GetDialogueEndingCutscene" },
+                // The retail profile picker. Listed as REQUIRED rather than optional because both
+                // types ship in the DEMO assembly too (verified by reflection over both DLLs) - only
+                // the scene data differs - so these hooks must attach on either build, and a miss is
+                // a real regression rather than a build difference. See ProfileSelectPatches.
+                { "TG_ProfileSlotFlipUI", "SelectInfoButton" },
+                { "TG_ProfileUIManager", "BackToMainMenu" },
+                { "TG_ProfileUIManager", "CloseProfileSelect" },
             };
 
             System.Collections.Generic.HashSet<string> live =

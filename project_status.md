@@ -2,7 +2,61 @@
 
 **Last updated:** 2026-08-10.
 
-## ⚠ LATEST (2026-08-10, later): calendar audited; music + social media built
+## ⚠ LATEST (2026-08-10): THE FULL GAME IS INSTALLED — Phase 6 audited, 2 defects fixed
+
+Retail lives at `D:\SteamLibrary\steamapps\Common\Coffee Talk` (`CoffeeTalk_Data`, no space).
+**MelonLoader is NOT installed there yet, so nothing in this section has RUN — it is all offline
+verification.** Deploy with `-p:GameDir="D:\SteamLibrary\steamapps\Common\Coffee Talk"` once the
+loader is copied over (the x86 chain carries: retail is PE32/i386 like the demo).
+
+**The audit came back overwhelmingly clean, and that is the finding.** 46/46 types, 102/102 members
+and **64/64 Harmony patch targets** resolve against retail. The `TG_CutsceneManager` landmine that
+`docs/PLAN.md` flagged as the top retail risk **did not go off** — still exactly one subclass. And
+both smartphone gates are *code-identical* between the builds (they turn on a scene singleton,
+`TG_ExpoBuildManager`, that retail simply does not instantiate), so the four phone readers that have
+never executed a line should now come alive **with no code changes at all**.
+
+**Two defects, and the first one broke the build:**
+
+1. ⚠ **`TG_NameKeys.playerNameInput` is the ONLY member retail moved — and it moved twice.**
+   `public InputField` → `private TG_CustomInputField`. The mod did not compile against retail.
+   Now read by reflection and cast to `InputField` (the retail type derives from it). **This is the
+   lone counterexample to the "retail is the same assembly with different scene data" rule, and it
+   sat on the critical path**, one screen after the profile picker.
+2. ⚠ **`SELECT_PROFILE` — the FIRST interactive screen of the retail game — was keyboard-dead.**
+   The demo never shows it, so it had never been considered. `TG_MainMenuManager:230` sends
+   PRESS_ANY_KEY straight into it, and `TG_ProfileUIManager.SelectFirstButton:252` is the familiar
+   JOYSTICK-gate-with-no-else, so on a keyboard it opened with **no cursor and nothing spoken**: a
+   blind player was stopped dead before ever reaching the main menu. Built
+   `src/FullGame/ProfileSelectPatches.cs` (+ `FocusRecovery` + a `FocusNarrator` parent-chain
+   labeller). `MOD_MENU`, the retail-only Steam Workshop screen, has the identical bug and gets the
+   identical recovery.
+
+**The lesson: the gated-Select bug class outlived the sweep that found it.** Session 5 audited the
+demo and fixed seven sites; retail then shipped two NEW screens with the same bug. What transfers is
+the PATTERN, not the list — which is why `FocusRecovery` is a watcher rather than seven patches, and
+why that design paid for itself here without being touched.
+
+**Also worth keeping: a probe that reports green because it checked nothing.** While writing
+`tools/verify-patch-targets.ps1` it printed a confident `Resolved: 0  FAILED: 0` three times running
+— once because PowerShell wraps `ReflectionTypeLoadException` so the typed `catch` never matched,
+once because a `Type`-valued attribute argument reports its `ArgumentType` as `RuntimeType`, and
+once because the attribute is named `HarmonyPatch`, not `HarmonyPatchAttribute`. **"0 failed" and "0
+checked" look identical in a summary line.** Both new tools now print what they examined, not just
+what failed.
+
+**New tooling** (both re-runnable, both documented at the top of the file):
+- `tools\verify-hook-targets.ps1` — now auto-detects demo vs retail and reports the cross-build
+  shape of `playerNameInput`.
+- `tools\verify-patch-targets.ps1` — **NEW.** Reads `[HarmonyPatch]` attributes out of the compiled
+  mod DLL and resolves each against the game assembly, so it cannot drift from the code the way a
+  hand-maintained list can. Expected: `Resolved: 64  FAILED: 0` on both builds.
+
+⚠ **Do not let a clean audit read as "retail works".** It proves BINDING, not BEHAVIOUR. The profile
+screen has never been seen; A/B/C/D have still never executed; thirteen audit fixes across three
+screens remain unconfirmed. **The next action is a live run on retail.**
+
+## Previous update (2026-08-10): calendar audited; music + social media built
 
 **The calendar audit found four defects** in `CalendarPatches.cs`, code that was already marked
 ✅ BUILT. Two ran on EVERY open of the load screen: `lastPlayedText` is a field the game never
@@ -132,6 +186,37 @@ Screen-reader mod for the **Coffee Talk demo**
 The pad must be on an **X360**-output profile. InControl 1.7.3's `PlayStation4WinProfile` matches
 only two exact joystick names with NO regex fallback; `Xbox360WinProfile` has 30 names plus
 `LastResortRegex = "360|xbox|catz"`.
+
+⚠ **STILL TRUE ON RETAIL, though the class names changed** (verified 2026-08-10). Retail ships
+**InControl 1.8.5** (build 9368) vs the demo's **1.7.3** (9338) — read the version from
+`InControl.VersionInfo.InControlVersion()`, since the assembly metadata is all zeros. 1.8.5 moved
+every profile into `InControl.UnityDeviceProfiles` / `InControl.NativeDeviceProfiles` and renamed
+them (`Xbox360WinProfile` → `Xbox360WindowsUnityProfile`), and `LastResortRegex` became
+`LastResortMatchers[].NamePattern`. **The asymmetry that makes this advice work is unchanged:** the
+X360 profile still carries `"360|xbox|catz"` as its last resort; the PS4 profile still has only two
+exact name matchers and no last resort at all.
+
+⚠ **The version bump does NOT affect the mod.** `KeyboardNav` binds only `InControl.Key`,
+`InControl.KeyBindingSource` (+ its `(Key[])` ctor) and `PlayerAction.AddBinding` — verified
+identical on both DLLs, including `AddBinding` still returning `bool` rather than throwing, which is
+the property the whole bind path depends on. A dependency version change is not automatically a
+problem: check the surface you actually use.
+
+**Where to check InControl versions — NOT by decompiling it.** It is a paid Asset Store package:
+the GitHub repo (`pbhogan/InControl`) is the OPEN-SOURCE edition, **discontinued and frozen at
+1.4.4**, so it covers neither version here. Use the vendor's own pages, which ARE current:
+- Changelog: `https://www.gallantgames.com/pages/incontrol-change-log`
+- API reference: `https://www.gallantgames.com/incontrol-api/html/`
+
+⚠ **The changelog is authoritative for REMOVALS, not for refactors.** It does not mention the
+profile rename, the namespace move, or the matcher change anywhere in 1.8.0–1.8.5 — so those cannot
+be dated from it and may predate 1.7.3 in the paid edition. What it DOES give us:
+- 1.8.0 "Removed deprecated `CustomInputDeviceProfile`", "`InputManager.Setup()`",
+  "`InputManager.Reset()`" — **the real upgrade hazard, and none of the three is used by the mod or
+  by the game** (grepped both).
+- 1.8.2 fixed "a regression (since 1.8.0) in device matching logic causing some devices not to be
+  identified correctly". Retail ships **1.8.5**, so it has that fix — relevant because device
+  matching is exactly what the DS4Windows/X360 note above depends on.
 
 ALSO: the raw DualSense must be **hidden in HidHide** (`HID\VID_054C&PID_0CE6&MI_03\...`, cloak
 on, DS4Windows whitelisted). Otherwise it appears as a second, unmapped device and WINS

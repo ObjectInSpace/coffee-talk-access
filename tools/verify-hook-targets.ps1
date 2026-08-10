@@ -57,14 +57,59 @@ $typeNames = @(
  'TG_PopUpLoadUI','TG_UIMenuContent','TG_DrinkManager','LatteArtManager','TG_CutsceneManager',
  'TG_OpeningCutSceneManager','TG_PressAnyBlinkTextUI','TG_PressAnyToSkipBlinkTextUI',
  'TG_KeyboardHotkeyManager','TG_PopUpManager','TG_ToolTipManager','TG_EndlessModeDialogManager',
- 'TG_SocialMediaApp'
+ 'TG_SocialMediaApp',
+ # The retail profile picker. Present in BOTH assemblies (only the scene data differs), so these
+ # must resolve on the demo too -- a miss here is a regression, not a build difference.
+ 'TG_ProfileUIManager','TG_ProfileSlotFlipUI'
+)
+
+# Types that exist ONLY in the retail assembly. Absent on the demo is EXPECTED and is not a
+# failure; the mod binds every one of these by string for exactly that reason.
+$retailOnlyTypeNames = @(
+ 'TG_ModManagerUI','TG_ModContentListPanelUI','TG_ModListItemUI','TG_OpenModButton',
+ 'TG_CustomInputField'
 )
 Write-Output "`n===== TYPES ====="
 $missingTypes = @()
+# Declared here (not at the members section) because the cross-build field check below runs first
+# and appends to it.
+$missingMembers = @()
 foreach ($n in $typeNames) {
     $t = Resolve-GameType $n
     if ($t) { Write-Output ("  OK      " + $n) }
     else { Write-Output ("  MISSING " + $n); $missingTypes += $n }
+}
+
+# Retail-only types are reported but never counted as missing: their absence is what tells us
+# which build this is, and the mod reaches all of them through string lookups that degrade to a
+# no-op rather than throwing.
+Write-Output "`n===== RETAIL-ONLY TYPES (absent on the demo is EXPECTED) ====="
+$retailOnlyPresent = 0
+foreach ($n in $retailOnlyTypeNames) {
+    $t = Resolve-GameType $n
+    if ($t) { Write-Output ("  PRESENT " + $n); $retailOnlyPresent++ }
+    else    { Write-Output ("  absent  " + $n) }
+}
+Write-Output ("  -> this looks like the {0} build." -f $(if ($retailOnlyPresent -gt 0) { 'RETAIL' } else { 'DEMO' }))
+
+# ---- 1b. Members whose SHAPE differs between builds. ----
+# playerNameInput is the ONLY member retail moved, and it moved twice over: public InputField on
+# the demo, private TG_CustomInputField on retail. NameEntryPatches.ReadField therefore reads it by
+# REFLECTION and casts to InputField (the retail type derives from it). This check exists so that a
+# future change back to a compile-time access is caught here rather than by a build failure.
+Write-Output "`n===== CROSS-BUILD FIELD SHAPES ====="
+$nk = Resolve-GameType 'TG_NameKeys'
+if ($nk) {
+    $pf = $nk.GetField('playerNameInput', $B)
+    if ($pf) {
+        $isInput = [UnityEngine.UI.InputField].IsAssignableFrom($pf.FieldType) 2>$null
+        Write-Output ("  TG_NameKeys.playerNameInput  type={0} public={1}" -f $pf.FieldType.Name, $pf.IsPublic)
+        if (-not $pf.IsPublic) { Write-Output "     -> PRIVATE: must be read by reflection (NameEntryPatches.ReadField does)." }
+        if ($pf.FieldType.Name -ne 'InputField') { Write-Output ("     -> NOT a plain InputField; the cast relies on {0} deriving from it." -f $pf.FieldType.Name) }
+    } else {
+        Write-Output "  MISSING TG_NameKeys.playerNameInput  *** the name screen will not read back ***"
+        $missingMembers += 'TG_NameKeys|playerNameInput|F'
+    }
 }
 
 # ---- 2. Members looked up by string: "Type|member|kind" ----
@@ -110,10 +155,19 @@ $members = @(
  'TG_CutsceneManager|SetDialogueText|M','TG_CutsceneManager|currentWholeText|F',
  'TG_PressAnyBlinkTextUI|SetTextLocalization|M','TG_PressAnyToSkipBlinkTextUI|SetTextLocalization|M',
  'TG_PressAnyBlinkTextUI|blinkTextArea|F',
- 'LatteArtManager|ActivateLatteArt|M','LatteArtManager|CloseLatteArt|M'
+ 'LatteArtManager|ActivateLatteArt|M','LatteArtManager|CloseLatteArt|M',
+ # Profile picker (ProfileSelectPatches + FocusNarrator.GetProfileSlotLabel). Every one of these is
+ # read by STRING through reflection, so a rename fails silently at runtime -- which on this screen
+ # means the FIRST screen of the retail game announces three unlabeled cards.
+ 'TG_ProfileUIManager|profileSlotUIList|F','TG_ProfileUIManager|profileSelectCanvasPanel|F',
+ 'TG_ProfileUIManager|BackToMainMenu|M','TG_ProfileUIManager|CloseProfileSelect|M',
+ 'TG_ProfileUIManager|SelectFirstButton|M',
+ 'TG_ProfileSlotFlipUI|SelectInfoButton|M','TG_ProfileSlotFlipUI|profileNameText|F',
+ 'TG_ProfileSlotFlipUI|informationText|F','TG_ProfileSlotFlipUI|progressSlider|F',
+ 'TG_ProfileSlotFlipUI|isOpen|F','TG_ProfileSlotFlipUI|createNewProfilePanel|F',
+ 'TG_ProfileSlotFlipUI|currentPlayingPanel|F','TG_ProfileSlotFlipUI|deleteProfileButton|F'
 )
 Write-Output "`n===== MEMBERS ====="
-$missingMembers = @()
 foreach ($spec in $members) {
     $p = $spec.Split('|'); $tn = $p[0]; $mn = $p[1]; $kind = $p[2]
     $t = Resolve-GameType $tn

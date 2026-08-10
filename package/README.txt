@@ -1,18 +1,33 @@
 COFFEE TALK ACCESS
-A screen reader mod for the Coffee Talk demo
-Version 0.6.0
+A screen reader mod for Coffee Talk
+Version 0.7.0
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
-the language picker, the name entry screen, the opening cutscene, story
-dialogue, and the brewing screen, and it adds keyboard navigation to menus
-that the game only lets you drive with a gamepad.
+the profile picker, the language picker, the name entry screen, the opening
+cutscene, story dialogue, and the brewing screen, and it adds keyboard
+navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
+WHAT IS NEW IN 0.7.0
+
+  - Works with the FULL GAME. Version 0.6.0 was built against the demo and
+    breaks on the full game's name entry screen, so if you have the full game
+    you need this version.
+
+  - Reads the profile picker, the screen the full game shows first, where you
+    choose or create a save profile. It was previously silent, and the arrow
+    keys did nothing on it, which left no way past it without a gamepad.
+
+  - The smartphone screens (newspaper, drink recipes, music, social media) can
+    now be reached. The demo blocks the phone, so these have never run before;
+    please report anything that sounds wrong.
+
+
 WHAT YOU NEED
 
-  - Coffee Talk (the demo) installed through Steam.
+  - Coffee Talk, either the full game or the demo, installed through Steam.
   - MelonLoader v0.7.1, 32-bit (x86) version.
   - A screen reader running, or SAPI as a fallback.
 
@@ -28,12 +43,14 @@ MelonLoader\Latest.log, which will contain a line reading "Game Arch: x86".
 HOW TO INSTALL
 
 1. Install MelonLoader v0.7.1 (x86) into your Coffee Talk folder. That folder
-   is normally:
+   is normally one of:
 
+   C:\Program Files (x86)\Steam\steamapps\common\Coffee Talk
    C:\Program Files (x86)\Steam\steamapps\common\Coffee Talk Demo
 
    Yours may be on another drive. In Steam you can find it with:
-   right-click the game, then Manage, then Browse local files.
+   right-click the game, then Manage, then Browse local files. It is the
+   folder containing CoffeeTalk.exe.
 
 2. Run the game once and then close it. This lets MelonLoader create its
    folders, including the Mods folder.
@@ -71,6 +88,21 @@ KEYS THE MOD ADDS
   F9                   On the brewing screen, speak the current drink's stats.
   F10                  Dump the current interface state into the log. This is
                        for reporting problems, and it speaks nothing.
+
+
+THE PROFILE PICKER (FULL GAME)
+
+The full game opens on a row of three save profiles before the main menu.
+
+  Left and right       Move between the three profiles.
+  Enter                Open the highlighted profile. The card turns over to
+                       show its options, and the mod announces them.
+  Enter (again)        Load the opened profile.
+  Escape               Close the opened profile and go back to the row.
+
+Deleting a profile is the gamepad X button only; the game has no key for it.
+Note that Enter means "open this card" on the row and "load" once a card is
+open, because the card has two sides. The mod says which side you are on.
 
 
 IF YOU USE A CONTROLLER
@@ -118,11 +150,19 @@ plus which screen you were on and what you pressed.
 
 KNOWN LIMITS
 
-  - This targets the DEMO. Some screens are built for the full game and are
-    present but untested there.
+  - Much of the full game's content has been checked only against the game's
+    code, not yet by playing it. The screens most likely to have rough edges
+    are the profile picker, the smartphone apps, the save/load calendar, the
+    gallery and the ending epilogues. Reports are genuinely useful here.
   - Latte art is a drawing minigame. Only whether you served the drink is
-    scored, not the picture, so the mod lets you serve without drawing.
-  - The smartphone screens are not fully covered yet.
+    scored, not the picture, so the mod lets you serve without drawing. The
+    drawing itself is still not accessible.
+  - On the profile picker, deleting a profile needs a gamepad (X button). The
+    game provides no keyboard key for it, and the mod does not invent one for
+    an action that cannot be undone.
+  - The chat log opens with the gamepad Y button only.
+  - The Steam Workshop mod manager screen is announced but has not been tested.
+  - Artwork in the gallery and comics is not described.
 
 
 CREDITS

@@ -204,6 +204,24 @@ namespace CoffeeTalkAccess.Menus
         /// must not risk. The InControl 1.7.3 docs describe regular bindings as "added by users,
         /// most likely at runtime", so this is the supported use, not a trick.
         ///
+        /// ⚠ THE TWO BUILDS SHIP DIFFERENT InControl VERSIONS - demo 1.7.3 (build 9338), retail
+        /// 1.8.5 (build 9368), read from InControl.VersionInfo.InControlVersion() since the assembly
+        /// metadata is all zeros. Retail also renames every device profile
+        /// (InControl.Xbox360WinProfile -> InControl.UnityDeviceProfiles.Xbox360WindowsUnityProfile)
+        /// and replaces LastResortRegex with LastResortMatchers/InputDeviceMatcher. (The vendor
+        /// changelog does not mention that refactor in 1.8.0-1.8.5, so it is NOT datable to this
+        /// bump - it may predate 1.7.3 in the paid edition. Don't infer a cause from the version.)
+        ///
+        /// None of it is touched here: verified against BOTH DLLs that InControl.Key (132 values,
+        /// all ten names below present), InControl.KeyBindingSource, its (Key[]) constructor, and
+        /// AddBinding returning BOOL are identical. The three APIs 1.8.0 actually REMOVED
+        /// (CustomInputDeviceProfile, InputManager.Setup/Reset) are used by neither the mod nor the
+        /// game. The bind path is version-independent; do not re-investigate the bump.
+        ///
+        /// ⚠ To re-check InControl, use the VENDOR's site, not the source: the GitHub repo is the
+        /// open-source edition, frozen at 1.4.4, and covers neither version. The changelog and API
+        /// reference at gallantgames.com are current.
+        ///
         /// Note the game itself already mixes key and device bindings on this very set -
         /// JoystickPlayerActions.cs:127-128 binds Key.E and Key.Q onto RBButton/LBButton - so a
         /// Key binding living beside an InputControlType binding is proven in this build.

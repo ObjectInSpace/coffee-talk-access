@@ -1,10 +1,14 @@
 # Coffee Talk Access
 
 A screen reader mod for [Coffee Talk](https://store.steampowered.com/app/914800/Coffee_Talk/),
-built against the **demo**. It speaks menus, the language picker, name entry, the opening
-cutscene, story dialogue and the brewing screen through NVDA, JAWS, SAPI or a braille display,
-and it supplies keyboard navigation for menus that the game otherwise only lets you drive
-with a gamepad.
+supporting **both the full game and the demo**. It speaks menus, the profile picker, the
+language picker, name entry, the opening cutscene, story dialogue and the brewing screen
+through NVDA, JAWS, SAPI or a braille display, and it supplies keyboard navigation for menus
+that the game otherwise only lets you drive with a gamepad.
+
+⚠ **Full-game users need v0.7.0 or later.** v0.6.0 was compiled against the demo and hard-binds
+`TG_NameKeys.playerNameInput`, which the full game changed from a public `InputField` to a
+private `TG_CustomInputField` — so it throws on the name entry screen there.
 
 Installation instructions for players are in [package/README.txt](package/README.txt).
 
@@ -21,13 +25,18 @@ not one of them a missing hook. The bugs were in the words, not the wiring.
   live stats and hover preview), the chat log, popups, drink recipes, achievements, the
   save/load calendar, gallery, ending epilogues, the newspaper reader, the music app and
   social media.
-- **Blocked on the demo** — the smartphone panels. `canOpenSmartPhone` is false here, so the
-  phone animates in and is pulled straight back off screen; no app panel ever activates. The
-  app *content* readers are built anyway, because the underlying data ships with the demo.
-- **Blocked on the retail binary** — re-verifying every hook against the full game, daily
-  cutscenes, endless mode and save/load across real profiles.
+- **Blocked on the demo, unblocked on the full game** — the smartphone panels. `canOpenSmartPhone`
+  is false on the demo, so the phone animates in and is pulled straight back off screen. The gate
+  is a scene singleton (`TG_ExpoBuildManager`) the full game never instantiates, and the code is
+  otherwise identical, so the app readers should run there unchanged — untested as yet.
+- **Verified against the full game, not yet played** — 46/46 types, 102/102 string-bound members
+  and 64/64 Harmony targets resolve. That proves the hooks *bind*; it says nothing about whether
+  they *say the right thing*, which is where this project keeps finding its bugs.
 
-So the project is gated far more on **access to the full game** than on unwritten code.
+The gate has moved: it is no longer access to the full game, but **a playthrough of it**. Two
+tools automate what used to need a live run — `tools/verify-hook-targets.ps1` (string-bound
+lookups, auto-detects which build it is auditing) and `tools/verify-patch-targets.ps1` (reads
+`[HarmonyPatch]` attributes out of the compiled DLL, so it cannot drift from the code).
 
 ## Building
 

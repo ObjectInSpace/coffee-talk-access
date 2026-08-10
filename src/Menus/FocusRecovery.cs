@@ -99,6 +99,23 @@ namespace CoffeeTalkAccess.Menus
                 case "CALENDAR_LOAD_GAME":
                 case "CONFIRMATION_LOAD_GAME":
                 case "CONFIRMATION_EXIT_GAME":
+                // ⚠ RETAIL-ONLY SCREENS, AND SELECT_PROFILE IS THE MOST IMPORTANT ENTRY IN THIS
+                // LIST. Both were measured on the retail assembly (2026-08-10) and both carry this
+                // class's exact bug:
+                //   TG_ProfileUIManager.SelectFirstButton:252  - whole body inside a JOYSTICK gate
+                //   TG_ModManagerUI:121                        - the same, in a DOFade callback
+                // Neither state exists in any demo scene, so both are inert there rather than
+                // wrong: NeedsSelection is only consulted for the state the game is actually in.
+                //
+                // SELECT_PROFILE is the retail game's FIRST interactive screen - TG_MainMenuManager
+                // :230 sends PRESS_ANY_KEY straight into OpenSelectProfile(0f) - so without recovery
+                // a keyboard player is stopped dead before reaching the main menu, with no cursor to
+                // move and nothing spoken. It is EventSystem-driven (SetNavigation builds an explicit
+                // left/right graph over profileSlotUIList[i].button), so recovery has real candidates
+                // and the game's own MouseHoverEvent keeps `currentSelected` in step with our
+                // selection - which is what makes Enter, Escape and gamepad X act on the right card.
+                case "SELECT_PROFILE":
+                case "MOD_MENU":
                     return true;
 
                 // ⚠ BREWING IS DELIBERATELY EXCLUDED, despite TG_DrinkManager:547 having the same
@@ -204,6 +221,37 @@ namespace CoffeeTalkAccess.Menus
         }
 
         /// <summary>
+        /// Finds a screen's own panel transform, to scope the entry-control search to it.
+        ///
+        /// Bound entirely by STRING - type name and field name both looked up at runtime - because
+        /// TG_ModManagerUI exists ONLY in the retail assembly. Naming it in code would not compile
+        /// against the demo, which this project still builds and tests against. TG_ProfileUIManager
+        /// does exist in both, but goes through the same path so there is one mechanism rather than
+        /// two.
+        ///
+        /// Returns null when anything is missing, which the caller treats as "no scope" - i.e. the
+        /// pre-existing scene-wide behaviour, logged as a fallback rather than silently applied.
+        /// </summary>
+        private static Transform FindPanelScope(string typeName, string panelField)
+        {
+            try
+            {
+                Type t = AccessTools.TypeByName(typeName);
+                if (t == null) return null;
+
+                UnityEngine.Object owner = UnityEngine.Object.FindObjectOfType(t);
+                if (owner == null) return null;
+
+                GameObject panel = AccessTools.Field(t, panelField)?.GetValue(owner) as GameObject;
+                return panel == null ? null : panel.transform;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Picks the control the game would have selected: the first interactable Selectable that
         /// is actually on screen, in the scene's own order.
         ///
@@ -249,6 +297,24 @@ namespace CoffeeTalkAccess.Menus
                 TG_SmartPhoneManager phone = UnityEngine.Object.FindObjectOfType<TG_SmartPhoneManager>();
                 if (phone != null) scope = phone.transform;
             }
+            else if (state == "SELECT_PROFILE")
+            {
+                // The picker is drawn OVER the main menu, which keeps its own controls alive
+                // underneath - the identical hazard to the phone-over-café case above, and it would
+                // fail the identical way: a main-menu button selected and announced under a profile
+                // label. Scoped to the panel the manager itself activates rather than to the manager
+                // (a TG_GenericSingelton whose transform need not be the panel's parent), and kept a
+                // PREFERENCE with the logged fallback for the reason spelled out above.
+                scope = FindPanelScope("TG_ProfileUIManager", "profileSelectCanvasPanel");
+            }
+            else if (state == "MOD_MENU")
+            {
+                // Retail-only, and bound entirely by STRING: TG_ModManagerUI does not exist in the
+                // demo assembly, so naming the type in code would not compile against it.
+                // ⚠ The field is `canvas`, not any of the *CanvasPanel names the rest of this
+                // codebase uses - read off TG_ModManagerUI:14, not guessed from the sibling screens.
+                scope = FindPanelScope("TG_ModManagerUI", "canvas");
+            }
 
             Selectable fallback = null;
 
@@ -274,9 +340,9 @@ namespace CoffeeTalkAccess.Menus
 
             if (fallback != null)
             {
-                MelonLogger.Warning("[Focus] no selectable inside the phone on " + state
+                MelonLogger.Warning("[Focus] no selectable inside the scoped panel on " + state
                     + "; falling back to " + fallback.gameObject.name
-                    + " - the phone-hierarchy assumption may be wrong.");
+                    + " - the panel-hierarchy assumption may be wrong for this screen.");
             }
 
             return fallback;
