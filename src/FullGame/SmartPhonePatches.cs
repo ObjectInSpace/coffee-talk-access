@@ -195,6 +195,23 @@ namespace CoffeeTalkAccess.FullGame
             {
                 if (__instance == null) return;
 
+                // ⚠ THE NEWSPAPER ANNOUNCES ITSELF - SAYING "Newspaper archive." HERE TALKS OVER IT.
+                //
+                // TG_NewspaperApp.Open calls SetNewsOnApp() on its way through, and
+                // NewspaperAppPatches postfixes that to speak the real header: the date, which day
+                // of how many, the headline, the paragraph count and the keys. This hook then fired
+                // immediately afterwards with interrupt:true and cut that sentence off, replacing
+                // it with two words that carry none of the same information.
+                //
+                // Live proof, log 26-8-10_18-17-43 at 18:20:52 - the full header is in the log, and
+                // 40 ms later "[Phone] Newspaper archive." interrupts it. The player reported
+                // "I tried the newspaper but didn't hear anything", which is what a sentence
+                // truncated after a word or two sounds like.
+                //
+                // The other three apps have no such reader (music and recipes announce per-ROW, on
+                // focus, which is a different moment) so they still want this line.
+                if (__instance is TG_NewspaperApp) return;
+
                 string app = DescribeApp(__instance.GetType().Name);
                 if (string.IsNullOrEmpty(app)) return;
 

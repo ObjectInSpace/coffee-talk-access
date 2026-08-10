@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.8.0
+Version 0.8.1
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -9,6 +9,18 @@ navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
+
+WHAT IS NEW IN 0.8.1
+
+  - Fixed the newspaper app sounding silent. It was reading out the date,
+    the day number, the headline and how many paragraphs there were - and
+    then the phone cut that sentence off after a word or two to say
+    "Newspaper archive", which told you nothing. The reader now finishes.
+
+  - The newspaper no longer reads as though a character were speaking it.
+
+  - Note: early in the story the archive genuinely only has one day in it,
+    and that day is the subscription teaser. It gets longer as you play.
 
 WHAT IS NEW IN 0.8.0
 
@@ -39,8 +51,8 @@ tested by playing the retail game, not just by reading its code.
     ingredient instead of the phone.
 
   - Not yet exercised in play, so treat as unproven: the chat log, the
-    save/load calendar, the social media app, the newspaper, and the ending
-    epilogues. Reports on these are especially welcome.
+    save/load calendar, the social media app, and the ending epilogues.
+    Reports on these are especially welcome.
 
 WHAT YOU NEED
 
@@ -170,8 +182,8 @@ KNOWN LIMITS
   - No one has finished a whole playthrough with this mod yet. The early game
     is well tested; the later it gets, the less it has been exercised.
   - These screens have never run in play and may have rough edges: the chat
-    log, the save/load calendar, the social media app, the newspaper, and the
-    ending epilogues. Reports on them are genuinely useful.
+    log, the save/load calendar, the social media app, and the ending
+    epilogues. Reports on them are genuinely useful.
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
   - Latte art is a drawing minigame. Only whether you served the drink is

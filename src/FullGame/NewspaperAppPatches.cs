@@ -519,10 +519,20 @@ namespace CoffeeTalkAccess.FullGame
         /// Speaks a line from the newspaper app.
         ///
         /// interrupt:true because stepping is a navigation action - a player who presses Down twice
-        /// wants the second paragraph now, not after the first finishes reading. TextType.Dialogue
-        /// so the backquote repeat key stores it: an article paragraph is exactly the kind of long
-        /// prose a player will want back after a noise in the room, and with the cursor holding
-        /// position the repeat returns that paragraph alone rather than the whole article.
+        /// wants the second paragraph now, not after the first finishes reading.
+        ///
+        /// ⚠ TextType.Menu, NOT Dialogue. This was Dialogue, on the reasoning that only Dialogue is
+        /// stored for the backquote repeat key - which is TRUE of UnityAccessibilityLib's DEFAULT
+        /// predicate but NOT of this mod, because Main.OnInitializeMelon overrides
+        /// ShouldStoreForRepeatPredicate to store everything except System. So Menu is stored just
+        /// as reliably, and the wanted behaviour (repeat returns the current paragraph alone,
+        /// because the cursor holds position) is unaffected.
+        ///
+        /// What Dialogue DID cost is real: it is the one type UAL gives a "Speaker: " prefix to.
+        /// A newspaper article has no speaker, so the header was being announced as though someone
+        /// were saying it (visible in the log as `[UAL] [Dialogue] Newspaper, September 22nd...`).
+        /// Menu is what every other UI announcement in this mod uses.
+        /// See memory: ual-repeat-key-storage.
         /// </summary>
         private static void Announce(string line)
         {
@@ -532,7 +542,7 @@ namespace CoffeeTalkAccess.FullGame
             if (speech == null || !speech.IsAvailable) return;
 
             MelonLogger.Msg("[NewsApp] " + line);
-            speech.SpeakAs(null, line, TextType.Dialogue, true);
+            speech.SpeakAs(null, line, TextType.Menu, true);
         }
     }
 }

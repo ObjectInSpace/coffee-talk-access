@@ -23,10 +23,11 @@ graded by what has actually FIRED in a live retail run, not by what compiles.
   dialogue (`[Speak/Say]`), brewing (ingredients, per-ingredient stat previews, the glass, the
   served drink), the profile picker, the language picker, name entry, the opening cutscene and
   press-any prompts, pop-ups, the smartphone, the music app (track/artist/album), the drink
-  recipes app (per-category counts with locked totals), the gallery and comics, and achievements.
+  recipes app (per-category counts with locked totals), the gallery and comics, achievements, and
+  the newspaper archive on the phone (date, day number, headline, paragraph count and keys).
 - **Built and bound, but NEVER executed a line in play** — the chat log, the save/load calendar,
-  the social media detail pane, the newspaper reader (both the phone archive and the morning
-  paper), the ending epilogues, and latte art. These are the honest gaps.
+  the social media detail pane, the morning-paper reader (`TG_NewspaperManager`, a different
+  screen from the phone archive), the ending epilogues, and latte art. These are the honest gaps.
 - **Verified offline on both builds** — 46/46 types, 102/102 string-bound members and 64/64
   Harmony targets resolve. That proves the hooks *bind*; it says nothing about whether they *say
   the right thing*, which is where this project keeps finding its bugs.
