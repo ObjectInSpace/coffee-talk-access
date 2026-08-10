@@ -10,6 +10,13 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
+WHAT IS NEW IN 0.7.1
+
+  - Fixed a startup warning that claimed two screens would speak everything
+    twice. They did not; the check itself was wrong. Nothing you hear changes,
+    but the log is trustworthy again.
+
+
 WHAT IS NEW IN 0.7.0
 
   - Works with the FULL GAME. Version 0.6.0 was built against the demo and
