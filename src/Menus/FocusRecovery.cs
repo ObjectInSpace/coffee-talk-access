@@ -170,6 +170,35 @@ namespace CoffeeTalkAccess.Menus
                 EventSystem es = EventSystem.current;
                 if (es == null) return;
 
+                // ⚠ A POPUP OWNS THE SCREEN EVEN IF SOMETHING BEHIND IT STILL HOLDS THE SELECTION.
+                //
+                // Every other screen in this class is rescued only when the selection is NULL,
+                // because a live selection means the game has a cursor and the mod must not fight
+                // it (rule 1). Popups are the one exception, and the reason is structural:
+                // TG_PopUpManager adds NO raycast blocker and disables nothing behind it, so the
+                // screen underneath keeps its selection and keeps responding to the arrow keys -
+                // while the game's own state says POP_UP_*, which is where Enter and Escape are
+                // routed.
+                //
+                // Live proof, log 26-8-10_18-50-34: the load calendar's "Do you want to restart the
+                // day?" confirmation announced correctly, and then the player's arrows walked the
+                // CALENDAR GRID behind it ("Day 2 ... Day 3 ... Day 10") because the grid never
+                // gave up focus. Recovery never even ran - the selection was never null. Reported
+                // as "it didn't take focus when I selected the save and it asked for confirmation".
+                //
+                // The save popup (POP_UP_LOAD) worked in the same session only by luck: it opens
+                // from a screen with nothing else interactable, so the selection WAS null there.
+                //
+                // So on a popup state we take focus even from a live selection, and we do it ONLY
+                // when the selection is not already inside the popup - which keeps rule 1 intact
+                // for the popup's own two buttons and stops this from re-firing every frame.
+                if (IsPopUpState(state: AccessMod.ReadControllerState()) &&
+                    !SelectionIsInsidePopUp(es.currentSelectedGameObject))
+                {
+                    TakeFocusForPopUp();
+                    return;
+                }
+
                 if (es.currentSelectedGameObject != null)
                 {
                     // Focus is healthy. Remember WHERE, so that if the game destroys this selection
@@ -284,6 +313,102 @@ namespace CoffeeTalkAccess.Menus
             if (phone == null) return false;
 
             return !phone.canOpenSmartPhone;
+        }
+
+        /// <summary>True for the two states where a modal popup owns input.</summary>
+        private static bool IsPopUpState(string state)
+        {
+            return state == "POP_UP_CONFIRMATION" || state == "POP_UP_LOAD";
+        }
+
+        /// <summary>
+        /// The popup UI that is currently up, or null. Reads TG_PopUpManager's OWN serialized
+        /// references rather than searching the scene, so we act on exactly the object the game
+        /// considers current. Bound by string: both fields are private.
+        /// </summary>
+        private static Component ActivePopUp()
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_PopUpManager");
+                if (mgrType == null) return null;
+
+                UnityEngine.Object mgr = UnityEngine.Object.FindObjectOfType(mgrType);
+                if (mgr == null) return null;
+
+                foreach (string field in new[] { "popUpConfirmationUI", "popUpLoadUI" })
+                {
+                    Component ui = AccessTools.Field(mgrType, field)?.GetValue(mgr) as Component;
+                    if (ui != null && ui.gameObject.activeInHierarchy) return ui;
+                }
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// True when the current selection already sits inside the live popup, in which case the
+        /// game (or an earlier pass of ours) has done the job and we must not touch it.
+        /// </summary>
+        private static bool SelectionIsInsidePopUp(GameObject selected)
+        {
+            if (selected == null) return false;
+
+            Component popUp = ActivePopUp();
+            if (popUp == null) return false;
+
+            return selected.transform.IsChildOf(popUp.transform);
+        }
+
+        /// <summary>
+        /// Moves focus onto the live popup's default button.
+        ///
+        /// Prefers the popup's OWN `yesButton` - the same control the game selects on a gamepad
+        /// (TG_PopUpManager.SelectButtonPopUpConfirmation/Load, both entirely JOYSTICK-gated, which
+        /// is why the keyboard needs this at all). Falls back to the first usable Selectable inside
+        /// the popup so a prefab change cannot leave the dialog unreachable.
+        ///
+        /// ⚠ Scoped HARD to the popup, with no cross-scope fallback: the whole point is that the
+        /// screen behind stays interactable, so "best candidate anywhere" is exactly the wrong
+        /// answer here.
+        /// </summary>
+        private static void TakeFocusForPopUp()
+        {
+            try
+            {
+                Component popUp = ActivePopUp();
+                if (popUp == null) return;
+
+                Selectable target = AccessTools.Field(popUp.GetType(), "yesButton")?.GetValue(popUp) as Selectable;
+
+                if (!IsUsable(target))
+                {
+                    target = null;
+                    foreach (Selectable s in popUp.GetComponentsInChildren<Selectable>(false))
+                    {
+                        if (!IsUsable(s)) continue;
+                        target = s;
+                        break;
+                    }
+                }
+
+                if (target == null) return;
+
+                // Do not re-announce or re-select what is already focused.
+                if (EventSystem.current != null &&
+                    ReferenceEquals(EventSystem.current.currentSelectedGameObject, target.gameObject)) return;
+
+                SelectAndNotify(target);
+                MelonLogger.Msg("[Focus] popup took focus from the screen behind it: "
+                    + target.gameObject.name);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Focus] popup focus threw: " + e.Message);
+            }
         }
 
         /// <summary>

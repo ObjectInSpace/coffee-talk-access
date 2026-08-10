@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.8.1
+Version 0.8.2
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -9,6 +9,17 @@ navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
+
+WHAT IS NEW IN 0.8.2
+
+  - Fixed confirmation dialogs not taking focus. Loading a save asks "do you
+    want to restart the day?", but the arrow keys still moved the calendar
+    behind the dialog instead of choosing Yes or No. The dialog now takes
+    focus as soon as it appears. Enter still means yes and Escape still
+    means no, as before.
+
+  - The save/load calendar is confirmed working: it reads each day, whether a
+    save exists, and the last-played summary.
 
 WHAT IS NEW IN 0.8.1
 
@@ -51,8 +62,8 @@ tested by playing the retail game, not just by reading its code.
     ingredient instead of the phone.
 
   - Not yet exercised in play, so treat as unproven: the chat log, the
-    save/load calendar, the social media app, and the ending epilogues.
-    Reports on these are especially welcome.
+    social media app, and the ending epilogues. Reports on these are
+    especially welcome.
 
 WHAT YOU NEED
 
@@ -182,8 +193,8 @@ KNOWN LIMITS
   - No one has finished a whole playthrough with this mod yet. The early game
     is well tested; the later it gets, the less it has been exercised.
   - These screens have never run in play and may have rough edges: the chat
-    log, the save/load calendar, the social media app, and the ending
-    epilogues. Reports on them are genuinely useful.
+    log, the social media app, and the ending epilogues. Reports on them are
+    genuinely useful.
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
   - Latte art is a drawing minigame. Only whether you served the drink is
