@@ -1,0 +1,491 @@
+using System;
+using System.Collections.Generic;
+using CoffeeTalkAccess.Speech;
+using HarmonyLib;
+using MelonLoader;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+
+namespace CoffeeTalkAccess.Menus
+{
+    /// <summary>
+    /// Provides keyboard focus for screens that have none.
+    ///
+    /// WHY THIS EXISTS: the F10 dump proved the main menu reports focused=NULL while three real
+    /// Buttons are on screen (PlayGamePanel, OptionsPanel, ButtonExit). Coffee Talk's main menu is
+    /// POINTER-DRIVEN - grep finds no Navigation, no Select(), no SetSelectedGameObject anywhere
+    /// in TG_MainMenuManager / TG_MainMenuButton / TG_MainMenuButtonPanel. Arrow keys therefore do
+    /// nothing, because there is no selection to move from. That, not the dialogue hook, is why
+    /// the demo could never be started.
+    ///
+    /// This is NOT a synthetic mouse click. TG_MainMenuButton implements ISelectHandler and
+    /// ISubmitHandler, and its OnSubmit and OnPointerClick BOTH call the same
+    /// ButtonOnClickEvent(), so selecting + submitting through the EventSystem is the genuine
+    /// activation path the game already supports - it simply never initiates it.
+    ///
+    /// SCOPE GUARD: this only takes over when the game itself has focus set to nothing. The
+    /// moment the game sets its own selection (brewing wires explicit Navigation and calls
+    /// Select() itself), the cursor stands down and FocusNarrator just reports what the game
+    /// chose. We never fight the game for focus.
+    /// </summary>
+    public sealed class MenuCursor
+    {
+        private readonly List<Selectable> _items = new List<Selectable>();
+        private int _index = -1;
+        private float _lastRebuild;
+
+        /// <summary>
+        /// The object WE last handed to the EventSystem. Lets the stand-down guard tell our own
+        /// selection apart from one the game made, so we never disable ourselves.
+        /// </summary>
+        private GameObject _weSelected;
+
+        /// <summary>
+        /// The entry our cursor is currently on, published so the announcement layer can refuse
+        /// to speak any OTHER button. Null when we are not driving (the game owns the screen),
+        /// in which case every announcement is legitimate.
+        /// </summary>
+        private static GameObject _currentTarget;
+
+        /// <summary>
+        /// A destructive control that has been armed by one Enter and awaits a second. Cleared
+        /// whenever the cursor moves, so arming never survives navigating away.
+        /// </summary>
+        private GameObject _pendingDestructive;
+
+        /// <summary>
+        /// True when <paramref name="go"/> is the entry the cursor is on, or when we are not
+        /// driving at all. Used by MenuPatches to suppress announcements for buttons the game
+        /// re-highlights behind our back.
+        /// </summary>
+        internal static bool IsCurrentTarget(GameObject go)
+        {
+            if (_currentTarget == null) return true;
+            if (go == null) return false;
+            return ReferenceEquals(go, _currentTarget)
+                   || go.transform.IsChildOf(_currentTarget.transform)
+                   || _currentTarget.transform.IsChildOf(go.transform);
+        }
+
+        // Rebuilding the selectable list is a FindObjectsOfType scan, so it is throttled rather
+        // than run per frame. Menus change on transitions, not continuously.
+        private const float RebuildInterval = 0.5f;
+
+        public void Update()
+        {
+            try
+            {
+                EventSystem es = EventSystem.current;
+                if (es == null) return;
+
+                // Stand down only when the GAME owns focus - not when WE do.
+                //
+                // BUG THIS FIXES (live 14:31): the guard used to be "any selection means stand
+                // down". But our own fallback sets EventSystem focus, so after the very first
+                // arrow press the cursor saw focused=ButtonExit, concluded the game had taken
+                // over, and permanently disabled itself. One announcement, then dead arrows.
+                // Tracking the object we selected distinguishes "the game drives this screen"
+                // from "we are driving this screen".
+                //
+                // This is the load-bearing guard, and it is what makes re-enabling this class
+                // safe. Screens the game DOES drive through Unity's EventSystem - the startup
+                // language picker (Navigation.Mode.Explicit + Select()) and brewing (explicit
+                // Navigation + Select() at 3 ingredients) - always have a selection, so we never
+                // move a cursor there and never double-step them again.
+                //
+                // WHY WE ARE NEEDED ANYWAY: in KEYBOARD mode the game routes input to
+                // TG_KeyboardHotkeyManager.HandlerKeyboard(), which reads ONLY
+                // RB/LB/Escape/Submit/Confirm/SmartPhoneToggle. It never reads Up/Down/Left/Right,
+                // even though KeyboardPlayerActions binds them. Arrow-key MENU navigation exists
+                // only on the JOYSTICK path (TG_ControllerInputManager.HandlerControllerPress ->
+                // ButtonUp/ButtonDown). So with a keyboard, the main menu genuinely cannot be
+                // navigated - which is why it stayed silent while the language screen worked.
+                GameObject selected = es.currentSelectedGameObject;
+                if (selected != null && !ReferenceEquals(selected, _weSelected))
+                {
+                    // STALE-FOCUS TRAP (live 14:45): leaving the options screen left
+                    // AmbienceSlider still selected while the game had already returned to
+                    // MAIN_MENU. We stood down for a selection belonging to a screen that no
+                    // longer exists, and the player was stranded with dead arrows and no way
+                    // back. If the selection is not part of the menu we are meant to be driving,
+                    // it is stale - clear it and take over rather than deferring to a ghost.
+                    if (IsStale(selected))
+                    {
+                        es.SetSelectedGameObject(null);
+                        selected = null;
+                    }
+                    else
+                    {
+                        // The game owns this screen: release our claim so MenuPatches announces
+                        // the game's own highlights normally again.
+                        _index = -1;
+                        _weSelected = null;
+                        _currentTarget = null;
+                        return;
+                    }
+                }
+
+                bool next = Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.RightArrow)
+                            || (Input.GetKeyDown(KeyCode.Tab) && !Input.GetKey(KeyCode.LeftShift));
+                bool prev = Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.LeftArrow)
+                            || (Input.GetKeyDown(KeyCode.Tab) && Input.GetKey(KeyCode.LeftShift));
+                bool submit = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)
+                              || Input.GetKeyDown(KeyCode.Space);
+
+                if (!next && !prev && !submit) return;
+
+                // ALWAYS rescan on an empty list. The throttle is only there to avoid a
+                // FindObjectsOfType every frame on a populated menu; it must never be the reason
+                // a keypress reports "no controls" on a screen that simply had not finished
+                // loading (that happened live at 18:37:45, twice, on the very first keypresses).
+                if (_items.Count == 0 || Time.unscaledTime - _lastRebuild > RebuildInterval)
+                    Rebuild();
+
+                if (_items.Count == 0)
+                {
+                    // Say nothing rather than "No controls here." A transient empty frame during
+                    // a scene load is normal, and announcing it trains the player to distrust the
+                    // mod. Silence here is correct; the next keypress rescans.
+                    return;
+                }
+
+                if (submit)
+                {
+                    Activate();
+                    return;
+                }
+
+                if (_index < 0) _index = next ? 0 : _items.Count - 1;
+                else _index = next ? (_index + 1) % _items.Count
+                                   : (_index - 1 + _items.Count) % _items.Count;
+
+                // Publish position so FocusNarrator can append "3 of 7" to whatever it announces.
+                // Without it there is no way to tell a 3-item menu from a 30-item one, or to know
+                // the list has wrapped around to the top.
+                FocusNarrator.PendingPosition = (_index + 1) + " of " + _items.Count;
+
+                Selectable target = _items[_index];
+                if (target == null) { Rebuild(); return; }
+
+                // Publish BEFORE hovering: TryGameHover synchronously triggers the MouseHover
+                // patch, which checks this to decide whether the announcement is ours.
+                _currentTarget = target.gameObject;
+
+                // Moving the cursor disarms any pending destructive confirmation.
+                _pendingDestructive = null;
+
+                // Prefer the game's OWN highlight call. TG_MainMenuButton.MouseHover() is what
+                // draws the selection arrow and runs the hover tween, and our MenuPatches hook on
+                // it does the announcing - so the screen and the speech stay in agreement, and
+                // there is exactly one voice for "what is focused".
+                // Keep the GAME's cursorIdx in step with ours BEFORE hovering.
+                //
+                // THE MIS-ACTIVATION BUG (live 14:51, quit the game): the manager re-highlights
+                // via buttonList[cursorIdx].MouseHover() from several places. While its cursorIdx
+                // still pointed at Play Game and ours pointed at Exit, that spurious hover made
+                // our MouseHover patch announce "PLAY GAME" AFTER we had announced "Button Exit".
+                // The player heard Play Game, pressed Enter, and the game quit. Two cursors with
+                // two different truths is the actual defect - so we write ours into the game's.
+                SyncGameCursorIndex(target.gameObject);
+
+                if (TryGameHover(target.gameObject))
+                {
+                    // The game's own highlight drives MenuPatches, which announces. Drop any
+                    // stale EventSystem selection so the guard above does not see a foreign
+                    // object next frame and stand us down.
+                    _weSelected = null;
+                    if (es.currentSelectedGameObject != null) es.SetSelectedGameObject(null);
+                }
+                else
+                {
+                    // Plain uGUI control: fall back to EventSystem focus, which FocusNarrator
+                    // announces instead. Remember it so we know the selection is ours.
+                    _weSelected = target.gameObject;
+                    es.SetSelectedGameObject(target.gameObject);
+                }
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Cursor] threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Writes our cursor position into TG_MainMenuManager.cursorIdx so the game's own
+        /// re-highlight calls (buttonList[cursorIdx].MouseHover(), made from several places)
+        /// point at the SAME entry we are on. Without this the two cursors drift apart and the
+        /// player can be told one thing while Enter activates another.
+        /// </summary>
+        private static void SyncGameCursorIndex(GameObject target)
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_MainMenuManager");
+                if (mgrType == null) return;
+
+                UnityEngine.Object[] mgrs = UnityEngine.Object.FindObjectsOfType(mgrType);
+                if (mgrs.Length == 0) return;
+
+                System.Collections.IList list =
+                    AccessTools.Field(mgrType, "buttonList")?.GetValue(mgrs[0]) as System.Collections.IList;
+                if (list == null) return;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    MonoBehaviour entry = list[i] as MonoBehaviour;
+                    if (entry == null) continue;
+
+                    if (ReferenceEquals(entry.gameObject, target) || target.transform.IsChildOf(entry.transform))
+                    {
+                        AccessTools.Field(mgrType, "cursorIdx")?.SetValue(mgrs[0], i);
+                        return;
+                    }
+                }
+
+                // Target is not in buttonList (e.g. the separate closeGameButton). Leave the
+                // game's index alone rather than pointing it somewhere arbitrary.
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Cursor] SyncGameCursorIndex threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Calls the game's own hover/highlight so the visible selection arrow, the hover tween
+        /// and the spoken announcement all come from one place. Returns false when the object is
+        /// not one of the game's menu buttons.
+        /// </summary>
+        private static bool TryGameHover(GameObject go)
+        {
+            try
+            {
+                // The TG_MainMenuButton may sit on this object OR on a parent: the game keeps its
+                // Button in a `button` field that often lives on a child, so walking up finds the
+                // owning menu-button component either way.
+                MonoBehaviour[] comps = go.GetComponentsInParent<MonoBehaviour>();
+                for (int i = 0; i < comps.Length; i++)
+                {
+                    MonoBehaviour c = comps[i];
+                    if (c == null) continue;
+
+                    string type = c.GetType().Name;
+                    if (type != "TG_MainMenuButton" && type != "TG_MainMenuButtonExpo") continue;
+
+                    System.Reflection.MethodInfo hover = c.GetType().GetMethod("MouseHover");
+                    if (hover == null) continue;
+
+                    ClearOtherHovers(go);
+                    hover.Invoke(c, null);
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Cursor] TryGameHover threw: " + e.Message);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Un-highlights every other menu button. The game normally pairs MouseHover with
+        /// MouseUnHover on the button being left; driving hover ourselves means we must clear the
+        /// previous one or the menu ends up showing several selection arrows at once.
+        /// </summary>
+        private static void ClearOtherHovers(GameObject keep)
+        {
+            try
+            {
+                Type btnType = AccessTools.TypeByName("TG_MainMenuButton");
+                if (btnType == null) return;
+
+                UnityEngine.Object[] all = UnityEngine.Object.FindObjectsOfType(btnType);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    MonoBehaviour mb = all[i] as MonoBehaviour;
+                    if (mb == null || mb.gameObject == keep) continue;
+
+                    System.Reflection.MethodInfo un = mb.GetType().GetMethod("MouseUnHover");
+                    if (un != null) un.Invoke(mb, null);
+                }
+            }
+            catch
+            {
+                // Cosmetic only - a stale arrow is not worth failing navigation over.
+            }
+        }
+
+        /// <summary>Activates the focused control.</summary>
+        private void Activate()
+        {
+            if (_index < 0 || _index >= _items.Count) return;
+
+            Selectable target = _items[_index];
+            if (target == null) return;
+
+            // CONFIRM-BEFORE-DESTROY. Live 14:51 the game quit on a single Enter because the
+            // player had been told the wrong button name. The announcement bug is fixed above,
+            // but a mis-announcement must never again be one keypress from losing the session:
+            // quitting now takes a deliberate second Enter, and says so.
+            if (FocusNarrator.IsDestructive(target.gameObject.name))
+            {
+                if (!ReferenceEquals(target.gameObject, _pendingDestructive))
+                {
+                    _pendingDestructive = target.gameObject;
+                    AccessMod.Speech?.Speak(
+                        "This will quit the game. Press Enter again to confirm, or move away to cancel.", true);
+                    return;
+                }
+            }
+            _pendingDestructive = null;
+
+            // TG_MainMenuButton implements ISubmitHandler, and its OnSubmit and OnPointerClick
+            // BOTH call the same ButtonOnClickEvent() - so this is the game's genuine activation
+            // path, not a simulated click.
+            ExecuteEvents.Execute(target.gameObject, new BaseEventData(EventSystem.current),
+                ExecuteEvents.submitHandler);
+
+            // Plain uGUI buttons only wire onClick. Guard against double-firing: a button that
+            // handled submit above already ran its click event.
+            Button btn = target as Button;
+            if (btn != null && btn.onClick != null && !HasSubmitHandler(target.gameObject))
+                btn.onClick.Invoke();
+
+            MelonLogger.Msg("[Cursor] activated: " + target.gameObject.name);
+
+            // The screen almost certainly changed; force a fresh scan next input and stop
+            // claiming a target that may no longer exist.
+            _items.Clear();
+            _index = -1;
+            _currentTarget = null;
+        }
+
+        /// <summary>
+        /// True when the EventSystem's current selection belongs to a screen that is no longer
+        /// showing, so deferring to it would strand the player.
+        ///
+        /// Deliberately CONSERVATIVE: an object that is merely inactive/destroyed is stale, and so
+        /// is one that is active but sits outside the menu the game says we are on. Anything else
+        /// is treated as a live selection we must not touch - wrongly claiming staleness would
+        /// bring back the double-stepping this guard exists to prevent.
+        /// </summary>
+        private bool IsStale(GameObject selected)
+        {
+            if (selected == null) return true;
+            if (!selected.activeInHierarchy) return true;
+
+            // On the main menu, the only legitimate selections are the game's own menu entries.
+            // A leftover options-panel slider is not one of them.
+            string state = AccessMod.ReadControllerState();
+            if (state == "MAIN_MENU")
+            {
+                if (_items.Count == 0) Rebuild();
+                for (int i = 0; i < _items.Count; i++)
+                {
+                    Selectable s = _items[i];
+                    if (s == null) continue;
+                    if (ReferenceEquals(s.gameObject, selected)) return false;
+                    // The menu entry's Button often lives on a child of the TG_MainMenuButton.
+                    if (selected.transform.IsChildOf(s.transform)) return false;
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Fills the item list from TG_MainMenuManager's own `buttonList`, skipping inactive and
+        /// non-interactable entries exactly as the game's ButtonUp/ButtonDown do. Returns false
+        /// when that list is unavailable (not on the main menu, or the manager is not alive), so
+        /// the caller falls back to a generic scan.
+        /// </summary>
+        private bool TryUseGameButtonList()
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_MainMenuManager");
+                if (mgrType == null) return false;
+
+                UnityEngine.Object[] mgrs = UnityEngine.Object.FindObjectsOfType(mgrType);
+                if (mgrs.Length == 0) return false;
+
+                System.Collections.IList list =
+                    AccessTools.Field(mgrType, "buttonList")?.GetValue(mgrs[0]) as System.Collections.IList;
+                if (list == null || list.Count == 0) return false;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    MonoBehaviour entry = list[i] as MonoBehaviour;
+                    if (entry == null || !entry.gameObject.activeInHierarchy) continue;
+
+                    Selectable s = entry.GetComponent<Selectable>();
+                    if (s == null)
+                    {
+                        // TG_MainMenuButton keeps its Button in a `button` field rather than on
+                        // the same object.
+                        s = AccessTools.Field(entry.GetType(), "button")?.GetValue(entry) as Selectable;
+                    }
+                    if (s == null || !s.interactable) continue;
+
+                    _items.Add(s);
+                }
+
+                // Exit is NOT in buttonList - the manager keeps it in its own `closeGameButton`
+                // field (hidden on console platforms via HideCloseGameButton). That is why the
+                // live run heard only "Play, Options" and could never reach Exit. Append it last,
+                // matching where it sits on screen.
+                Selectable exit = AccessTools.Field(mgrType, "closeGameButton")?.GetValue(mgrs[0]) as Selectable;
+                if (exit != null && exit.gameObject.activeInHierarchy && exit.interactable)
+                    _items.Add(exit);
+
+                return _items.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>True if the object implements ISubmitHandler, so submit already activated it.</summary>
+        private static bool HasSubmitHandler(GameObject go)
+        {
+            return go.GetComponent<ISubmitHandler>() != null;
+        }
+
+        /// <summary>
+        /// Collects the interactable controls on screen in reading order (top to bottom, then
+        /// left to right), which is the order a sighted player scans them.
+        /// </summary>
+        private void Rebuild()
+        {
+            _lastRebuild = Time.unscaledTime;
+            _items.Clear();
+
+            // PREFER the game's own authored list. TG_MainMenuManager.buttonList points at
+            // whichever panel is live (mainMenuGamePanel / ...Expo / ...Demo) and holds only the
+            // real menu entries in authored order. A blind FindObjectsOfType<Selectable> scan
+            // instead picked up the panel CONTAINERS too - which is why one path announced
+            // "1 of 3" (ButtonExit/OptionsPanel/PlayGamePanel) while the game's own hook said
+            // "1 of 2". Wrong count, wrong order, and Exit sorted to the top.
+            if (TryUseGameButtonList()) return;
+
+            Selectable[] all = UnityEngine.Object.FindObjectsOfType<Selectable>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                Selectable s = all[i];
+                if (s == null || !s.gameObject.activeInHierarchy || !s.interactable) continue;
+                _items.Add(s);
+            }
+
+            _items.Sort(delegate (Selectable a, Selectable b)
+            {
+                Vector3 pa = a.transform.position;
+                Vector3 pb = b.transform.position;
+                int byY = pb.y.CompareTo(pa.y);      // higher on screen first
+                return byY != 0 ? byY : pa.x.CompareTo(pb.x);
+            });
+        }
+    }
+}

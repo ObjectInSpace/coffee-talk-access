@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Decompiled game code — reference only, not ours to redistribute.
+decompiled/
+
+# NOTE: libs/ is deliberately TRACKED. It holds the x86 UniversalSpeech.dll and
+# nvdaControllerClient.dll, which package.ps1 requires and fails loudly without.
+# Ignoring them would make a fresh clone unable to build a release.
+
+# Editor / OS
+.vs/
+*.user
+Thumbs.db
+desktop.ini

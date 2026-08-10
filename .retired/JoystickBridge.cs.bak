@@ -1,0 +1,509 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
+using MelonLoader;
+
+namespace CoffeeTalkAccess.Menus
+{
+    /// <summary>
+    /// Makes the keyboard drive Coffee Talk's OWN menu navigation.
+    ///
+    /// WHY THIS EXISTS (the whole design in one paragraph):
+    /// TG_ControllerInputManager.ControllerUpdateFunction branches on currentTypeController.
+    /// JOYSTICK -> HandlerControllerPress(), a complete input router whose UpButtonPressed /
+    /// DownButtonPressed / LeftButtonPressed / RightButtonPressed / AButtonPressed /
+    /// BButtonPressed handle 12, 12, 6, 6, 10 and 22 game states respectively - brewing, the
+    /// phone, chat log, save/load, gallery, profiles, everything. KEYBOARD -> HandlerKeyboard(),
+    /// which reads only RB/LB/Escape/Submit/Confirm/SmartPhoneToggle and NEVER reads a direction
+    /// key. So the game already contains correct, developer-tested navigation for every screen;
+    /// it is simply unreachable from a keyboard. We do not re-implement it - we turn it on.
+    ///
+    /// HOW, without faking a device:
+    /// The game reads every actionable input through InControl PlayerActions. InControl treats the
+    /// keyboard as a BINDING SOURCE, not a device: KeyBindingSource.GetState(InputDevice) returns
+    /// Control.IsPressed and IGNORES its device argument entirely. So a Key binding on the joystick
+    /// action set works with NO controller attached and NO profile matched. This is not a hack -
+    /// the game's own JoystickPlayerActions already binds Key.E and Key.Q onto RBButton/LBButton
+    /// (JoystickPlayerActions.cs:127-128), mixing key and device bindings on one action.
+    ///
+    /// Verified against the shipped InControl 1.7.3 (build 9338) and the official API reference:
+    ///  - AddBinding(BindingSource) returns bool, does NOT throw on conflict, and is documented for
+    ///    runtime use ("regular bindings ... added by users, most likely at runtime"). We use it in
+    ///    preference to AddDefaultBinding, which THROWS InControlException if the source is already
+    ///    bound - an exception thrown into the game's frame is exactly what a mod must not risk.
+    ///  - The game never calls Save()/Load()/Reset()/ClearBindings(), so nothing overwrites us.
+    ///
+    /// A NOTE ON ANALOG THRESHOLDS - this is why a real D-pad can fail where a key succeeds:
+    /// HandlerControllerPress gates directions on RawValue >= 0.5 (vertical) and >= 0.9
+    /// (horizontal), while face buttons need only WasPressed. A key binding reports a clean 0 or 1,
+    /// so it always clears both thresholds. An analog axis whose profile mapping is scaled or
+    /// mis-indexed can sit under them and be silently dropped - which is why face buttons can work
+    /// while the D-pad does nothing on the same pad.
+    /// </summary>
+    internal sealed class JoystickBridge
+    {
+        private bool _applied;
+        private bool _failed;
+
+        // Kept so Dispose() can put the game back exactly as we found it.
+        private readonly List<KeyValuePair<object, object>> _addedBindings =
+            new List<KeyValuePair<object, object>>();
+        private object _inputManager;
+        private object _previousControllerType;
+
+        internal bool IsActive => _applied;
+
+        /// <summary>
+        /// States where the bridge must STAND DOWN because the game drives that screen through
+        /// Unity's EventSystem rather than TG_ControllerInputManager's routers.
+        ///
+        /// ⚠ THIS COST A LIVE RUN (2026-08-09) - the language picker went dead, arrows AND Enter.
+        ///
+        /// The cause is a THIRD action set: InputModuleActionAdapter.InputModuleActions feeds
+        /// InControlInputModule (and thus the EventSystem), and it ALREADY binds Key.UpArrow,
+        /// Key.DownArrow, Key.LeftArrow, Key.RightArrow, Key.Return and Key.Space itself
+        /// (InputModuleActionAdapter.cs:56-75). An InControl BindingSource carries a `BoundTo`
+        /// back-pointer and belongs to ONE action at a time, so once our joystick-set bindings
+        /// exist for the same keys, that screen's navigation stops receiving them.
+        ///
+        /// Note our bindings were still ACCEPTED - we construct fresh KeyBindingSource objects
+        /// whose BoundTo is null, so AddBinding returns true and logs nothing. The conflict is
+        /// invisible at bind time and only shows up as a dead screen.
+        ///
+        /// TG_InitLanguageSettingMenu sets State.INIT_SCREEN and navigates with
+        /// Navigation.Mode.Explicit + button.Select(). INIT_SCREEN appears in ZERO router methods,
+        /// so the bridge has nothing to contribute there and must get out of the way entirely.
+        /// </summary>
+        private static readonly HashSet<string> EventSystemStates = new HashSet<string>
+        {
+            "INIT_SCREEN",   // language picker - confirmed dead-on-arrival without this
+            "PRESS_ANY_KEY", // no navigation to supply; any key advances
+        };
+
+        /// <summary>
+        /// True once the bridge is driving, meaning MouseOverManager narrates every cursor move
+        /// and the per-button MouseHover hook would double-announce the same move.
+        /// Static because the Harmony patch class has no instance to ask.
+        /// </summary>
+        internal static bool SuppressHoverAnnounce { get; private set; }
+
+        /// <summary>
+        /// Arrow keys and WASD onto the directional actions; Enter/Space onto A; Backspace onto B.
+        ///
+        /// Escape is deliberately NOT bound to B. It already works through HandlerKeyboard, which
+        /// keeps running (see EnableJoystickRouter), and double-binding it would fire both the
+        /// keyboard path's EscapeHandler and the joystick path's BButtonPressed for one press -
+        /// backing out two screens at once.
+        /// </summary>
+        private static readonly string[] UpKeys = { "UpArrow", "W" };
+        private static readonly string[] DownKeys = { "DownArrow", "S" };
+        private static readonly string[] LeftKeys = { "LeftArrow", "A" };
+        private static readonly string[] RightKeys = { "RightArrow", "D" };
+        private static readonly string[] AcceptKeys = { "Return", "Space" };
+        private static readonly string[] BackKeys = { "Backspace" };
+
+        /// <summary>
+        /// Wires the keyboard into the joystick action set and switches the router on.
+        /// Safe to call repeatedly; only the first successful call does work.
+        ///
+        /// Returns false and leaves the game untouched on any failure - a partially-applied
+        /// binding set would be worse than none, because the player would get some directions
+        /// working and others dead with no way to tell which.
+        /// </summary>
+        internal bool TryApply()
+        {
+            if (_applied || _failed) return _applied;
+
+            try
+            {
+                _inputManager = ResolveInputManager();
+                if (_inputManager == null)
+                {
+                    // Not an error: the manager is a scene singleton and simply may not exist yet.
+                    // OnUpdate retries every frame until it does.
+                    return false;
+                }
+
+                object playerActions = AccessTools.Field(_inputManager.GetType(), "playerActions")
+                    ?.GetValue(_inputManager);
+                if (playerActions == null)
+                {
+                    // Field exists but is null: InitController() has not run yet. Retry next frame.
+                    return false;
+                }
+
+                int bound = 0;
+                bound += BindKeys(playerActions, "Up", UpKeys);
+                bound += BindKeys(playerActions, "Down", DownKeys);
+                bound += BindKeys(playerActions, "Left", LeftKeys);
+                bound += BindKeys(playerActions, "Right", RightKeys);
+                bound += BindKeys(playerActions, "AButton", AcceptKeys);
+                bound += BindKeys(playerActions, "BButton", BackKeys);
+
+                // Also bind the D-pad and left stick explicitly onto the same actions. They are
+                // already bound by CreateWithDefaultBindings, so AddBinding will simply return
+                // false for duplicates - harmless. This is here for the case where the pad's
+                // profile maps DPad to a control the defaults did not cover.
+                bound += BindControls(playerActions, "Up", "DPadUp", "LeftStickUp");
+                bound += BindControls(playerActions, "Down", "DPadDown", "LeftStickDown");
+                bound += BindControls(playerActions, "Left", "DPadLeft", "LeftStickLeft");
+                bound += BindControls(playerActions, "Right", "DPadRight", "LeftStickRight");
+
+                if (bound == 0)
+                {
+                    MelonLogger.Error("[Bridge] No bindings were added - menu keys will not work.");
+                    _failed = true;
+                    return false;
+                }
+
+                if (!EnableJoystickRouter())
+                {
+                    // Bindings without the router are inert, and leaving them attached would be
+                    // dead weight the player cannot see. Undo them.
+                    RemoveAddedBindings();
+                    _failed = true;
+                    return false;
+                }
+
+                _applied = true;
+                SuppressHoverAnnounce = true;
+                MelonLogger.Msg("[Bridge] Keyboard menu navigation ENABLED (" + bound + " bindings).");
+                return true;
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Error("[Bridge] Failed to enable keyboard navigation: " + e);
+                _failed = true;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Switches the input router to the joystick path.
+        ///
+        /// CRITICAL - we set the BACKING FIELD, not the CurrentTypeControllerState property.
+        /// The property setter calls OnControllerChanged -> SetToJoyStickJoystickMode ->
+        /// HandleActiveController(), which sets Cursor.visible = false and LOCKS the mouse cursor,
+        /// and also swaps the on-screen button prompts to gamepad glyphs. Writing the field moves
+        /// the router without any of those side effects, so the mouse keeps working normally for
+        /// anyone sighted sharing this install.
+        ///
+        /// HandlerKeyboard() stops being called as a result, so all six shortcuts it owns were
+        /// checked against the joystick path. Every one is covered, most of them better:
+        /// Escape -> BButtonPressed (22 states vs Escape's 15), Tab -> XButtonPressed,
+        /// Enter/Confirm -> AButtonPressed.
+        ///
+        /// RB/LB (E/Q) deserve a specific note, because the obvious worry is wrong. On the
+        /// keyboard path they rotate the cup during LATTE_ART; on the joystick path the bumpers
+        /// switch between the phone and the bar. That looks like a collision but cannot be one:
+        /// RightBumperPressed/LeftBumperPressed handle 13 states and LATTE_ART is NOT among them,
+        /// and the states are mutually exclusive - you are in LATTE_ART or in BREWING/PHONE_*,
+        /// never both. Latte art also drives its own rotation internally
+        /// (LatteArtManager.cs:367-371 calls AddRotateFluidSimObject directly), so it does not
+        /// depend on TG_KeyboardHotkeyManager at all. Nothing is lost by this switch.
+        /// </summary>
+        private bool EnableJoystickRouter()
+        {
+            Type mgrType = _inputManager.GetType();
+
+            FieldInfo typeField = AccessTools.Field(mgrType, "currentTypeController");
+            if (typeField == null)
+            {
+                MelonLogger.Error("[Bridge] currentTypeController field not found.");
+                return false;
+            }
+
+            _previousControllerType = typeField.GetValue(_inputManager);
+
+            Type enumType = AccessTools.TypeByName("TG_ControllerInputManager+ControllerType")
+                            ?? typeField.FieldType;
+            object joystick = Enum.Parse(enumType, "JOYSTICK");
+            typeField.SetValue(_inputManager, joystick);
+
+            // The manager will not route anything until it has initialized.
+            FieldInfo initField = AccessTools.Field(mgrType, "initialized");
+            if (initField != null && !(bool)initField.GetValue(_inputManager))
+            {
+                MelonLogger.Warning("[Bridge] Input manager not initialized yet; will re-assert.");
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Re-asserts joystick mode if the game flips it back.
+        ///
+        /// CheckActiveController() runs every OnGUI and switches to KEYBOARD the moment
+        /// ListenKeyboard() sees any key or mouse event - which is EVERY frame the player is
+        /// navigating. Without this the router would revert on the very first arrow press and the
+        /// keys would appear to do nothing.
+        ///
+        /// This is a re-assert rather than a Harmony patch on CheckActiveController because it is
+        /// one field write on a cheap path, and it leaves the game's own logic untouched: if
+        /// something else legitimately wants keyboard mode, it gets it for a frame and we simply
+        /// put the router back. Nothing is suppressed, so no game behaviour is lost.
+        /// </summary>
+        internal void Update()
+        {
+            try
+            {
+                // Which screen the game thinks it is on decides whether we belong here at all.
+                string state = ReadState();
+                bool standDown = state != null && EventSystemStates.Contains(state);
+
+                if (standDown)
+                {
+                    // Release the keys so the EventSystem-driven screen can have them back.
+                    // Only act on the TRANSITION: RemoveBinding is deferred (the binding is
+                    // "marked for removal", not removed now), so repeating it every frame would
+                    // queue redundant work and make the settled state hard to reason about.
+                    if (_applied)
+                    {
+                        MelonLogger.Msg("[Bridge] standing down for " + state
+                            + " (EventSystem drives this screen).");
+                        Dispose();
+                        // Dispose sets _failed=false implicitly via _applied=false; allow re-apply.
+                        _failed = false;
+                    }
+                    return;
+                }
+
+                if (!_applied)
+                {
+                    TryApply();
+                    return;
+                }
+
+                if (_inputManager == null)
+                {
+                    // Scene change destroyed the singleton - re-resolve and re-apply from scratch.
+                    _applied = false;
+                    _addedBindings.Clear();
+                    return;
+                }
+
+                FieldInfo typeField = AccessTools.Field(_inputManager.GetType(), "currentTypeController");
+                if (typeField == null) return;
+
+                object current = typeField.GetValue(_inputManager);
+                if (current == null) return;
+
+                if (current.ToString() != "JOYSTICK")
+                {
+                    typeField.SetValue(_inputManager, Enum.Parse(current.GetType(), "JOYSTICK"));
+                }
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Bridge] update threw: " + e.Message);
+                _applied = false;
+            }
+        }
+
+        /// <summary>
+        /// Reads TG_ControllerInputManager.currentState, or null if the manager is not alive yet.
+        /// Null means "unknown", and we treat unknown as safe-to-apply rather than standing down,
+        /// because the manager is absent mainly before the first menu exists.
+        /// </summary>
+        private string ReadState()
+        {
+            try
+            {
+                object mgr = _inputManager ?? ResolveInputManager();
+                if (mgr == null) return null;
+
+                object state = AccessTools.Field(mgr.GetType(), "currentState")?.GetValue(mgr);
+                return state?.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Adds Key bindings to one named PlayerAction. Returns how many were actually added.
+        ///
+        /// AddBinding returns false rather than throwing when a binding already exists or is bound
+        /// elsewhere, so a duplicate is a no-op we can safely ignore. Each key is resolved by NAME
+        /// against InControl's Key enum, so a key that does not exist in this version is skipped
+        /// instead of breaking the whole set.
+        /// </summary>
+        private int BindKeys(object playerActions, string actionName, string[] keyNames)
+        {
+            object action = AccessTools.Field(playerActions.GetType(), actionName)?.GetValue(playerActions);
+            if (action == null)
+            {
+                MelonLogger.Warning("[Bridge] action '" + actionName + "' not found.");
+                return 0;
+            }
+
+            Type keyEnum = AccessTools.TypeByName("InControl.Key");
+            Type keySource = AccessTools.TypeByName("InControl.KeyBindingSource");
+            if (keyEnum == null || keySource == null)
+            {
+                MelonLogger.Error("[Bridge] InControl Key/KeyBindingSource types not found.");
+                return 0;
+            }
+
+            // KeyBindingSource(params Key[]) - a single-element array is one plain key, not a combo.
+            ConstructorInfo ctor = keySource.GetConstructor(new[] { keyEnum.MakeArrayType() });
+            if (ctor == null)
+            {
+                MelonLogger.Error("[Bridge] KeyBindingSource(Key[]) constructor not found.");
+                return 0;
+            }
+
+            MethodInfo addBinding = AccessTools.Method(action.GetType(), "AddBinding");
+            if (addBinding == null)
+            {
+                MelonLogger.Error("[Bridge] PlayerAction.AddBinding not found.");
+                return 0;
+            }
+
+            int added = 0;
+            foreach (string keyName in keyNames)
+            {
+                try
+                {
+                    if (!Enum.IsDefined(keyEnum, keyName))
+                    {
+                        MelonLogger.Warning("[Bridge] key '" + keyName + "' not in this InControl.");
+                        continue;
+                    }
+
+                    Array keyArray = Array.CreateInstance(keyEnum, 1);
+                    keyArray.SetValue(Enum.Parse(keyEnum, keyName), 0);
+                    object binding = ctor.Invoke(new object[] { keyArray });
+
+                    object result = addBinding.Invoke(action, new[] { binding });
+                    if (result is bool && (bool)result)
+                    {
+                        _addedBindings.Add(new KeyValuePair<object, object>(action, binding));
+                        added++;
+                    }
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Warning("[Bridge] binding " + keyName + " -> " + actionName
+                        + " threw: " + e.Message);
+                }
+            }
+            return added;
+        }
+
+        /// <summary>
+        /// Adds device-control bindings (D-pad, stick) to a named action, for pads whose profile
+        /// did not get the defaults. Duplicates return false and are ignored.
+        /// </summary>
+        private int BindControls(object playerActions, string actionName, params string[] controls)
+        {
+            object action = AccessTools.Field(playerActions.GetType(), actionName)?.GetValue(playerActions);
+            if (action == null) return 0;
+
+            Type controlEnum = AccessTools.TypeByName("InControl.InputControlType");
+            Type deviceSource = AccessTools.TypeByName("InControl.DeviceBindingSource");
+            if (controlEnum == null || deviceSource == null) return 0;
+
+            ConstructorInfo ctor = deviceSource.GetConstructor(new[] { controlEnum });
+            MethodInfo addBinding = AccessTools.Method(action.GetType(), "AddBinding");
+            if (ctor == null || addBinding == null) return 0;
+
+            int added = 0;
+            foreach (string control in controls)
+            {
+                try
+                {
+                    if (!Enum.IsDefined(controlEnum, control)) continue;
+
+                    object binding = ctor.Invoke(new[] { Enum.Parse(controlEnum, control) });
+                    object result = addBinding.Invoke(action, new[] { binding });
+                    if (result is bool && (bool)result)
+                    {
+                        _addedBindings.Add(new KeyValuePair<object, object>(action, binding));
+                        added++;
+                    }
+                }
+                catch (Exception)
+                {
+                    // A control this profile does not expose is expected, not exceptional.
+                }
+            }
+            return added;
+        }
+
+        /// <summary>Resolves the TG_ControllerInputManager singleton instance, or null if not alive.</summary>
+        private static object ResolveInputManager()
+        {
+            Type mgrType = AccessTools.TypeByName("TG_ControllerInputManager");
+            if (mgrType == null) return null;
+
+            Type singleton = AccessTools.TypeByName("TG_GenericSingelton`1");
+            if (singleton == null) return null;
+
+            Type closed = singleton.MakeGenericType(mgrType);
+            return AccessTools.Property(closed, "Instance")?.GetValue(null)
+                   ?? AccessTools.Field(closed, "Instance")?.GetValue(null);
+        }
+
+        /// <summary>
+        /// Removes every binding we added and restores the original controller type.
+        ///
+        /// NOTE: InControl's RemoveBinding is DEFERRED - the official API reference states the
+        /// binding "is only marked for removal, and is not immediately removed", so that removal is
+        /// safe during iteration over the Bindings collection. So do not read the binding list
+        /// straight after this and expect it to be shorter; it settles on the set's next update.
+        /// </summary>
+        internal void Dispose()
+        {
+            RemoveAddedBindings();
+
+            try
+            {
+                if (_inputManager != null)
+                {
+                    // Restore what the game had before we touched it. If we never captured a
+                    // value, fall back to KEYBOARD explicitly rather than leaving JOYSTICK set:
+                    // the screens we stand down for are keyboard/mouse-driven, and leaving the
+                    // router on the joystick path would keep HandlerKeyboard from running.
+                    FieldInfo f = AccessTools.Field(_inputManager.GetType(), "currentTypeController");
+                    if (f != null)
+                    {
+                        object restore = _previousControllerType
+                                         ?? Enum.Parse(f.FieldType, "KEYBOARD");
+                        f.SetValue(_inputManager, restore);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Bridge] restore threw: " + e.Message);
+            }
+
+            // Forget the captured value: the next TryApply must latch the mode that is current
+            // THEN, not one captured on a different screen several transitions ago.
+            _previousControllerType = null;
+
+            _applied = false;
+            SuppressHoverAnnounce = false;
+        }
+
+        private void RemoveAddedBindings()
+        {
+            foreach (KeyValuePair<object, object> pair in _addedBindings)
+            {
+                try
+                {
+                    AccessTools.Method(pair.Key.GetType(), "RemoveBinding")
+                        ?.Invoke(pair.Key, new[] { pair.Value });
+                }
+                catch (Exception)
+                {
+                    // Best effort - a binding we cannot remove is inert, not harmful.
+                }
+            }
+            _addedBindings.Clear();
+        }
+    }
+}

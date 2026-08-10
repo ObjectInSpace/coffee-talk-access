@@ -1,0 +1,109 @@
+      <Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Coffee Talk is Unity 2018.4.9f1 Mono with scripting-runtime-version=latest, so
+         Assembly-CSharp is the .NET 4.x profile (v4.0.30319) -> net472, NOT the net35 that
+         older Unity Mono games (and MelonLoader's net35 runtime dir name) suggest. -->
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>CoffeeTalkAccess</AssemblyName>
+    <RootNamespace>CoffeeTalkAccess</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- We only compile src/. decompiled/ holds reference C# for reading, not building. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NuGetAudit>false</NuGetAudit>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Override with /p:GameDir=... if your install differs. -->
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">D:\SteamLibrary\steamapps\Common\Coffee Talk Demo</GameDir>
+    <MelonDir>$(GameDir)\MelonLoader</MelonDir>
+    <!-- MelonLoader's runtime dir is literally named net35 even though we target net472;
+         the DLLs there are the Mono-runtime build and load fine under the 4.x profile.
+         Verified against the working x86 install (MelonLoader v0.7.1, Runtime Type: net35). -->
+    <MelonNet35>$(MelonDir)\net35</MelonNet35>
+    <Managed>$(GameDir)\CoffeeTalk_Data\Managed</Managed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Loader + patching -->
+    <Reference Include="MelonLoader"><HintPath>$(MelonNet35)\MelonLoader.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(MelonNet35)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+
+    <!-- Unity engine modules. Mono build: plain names, no Il2Cpp prefixes. -->
+    <Reference Include="UnityEngine"><HintPath>$(Managed)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Managed)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- NOTE: Unity 2018.4 has NO UnityEngine.InputLegacyModule (that split arrived in 2019.x);
+         legacy Input.GetKeyDown lives in CoreModule here. Referencing the 2019+ name resolves to
+         nothing and emits MSB3245. -->
+    <Reference Include="UnityEngine.InputModule"><HintPath>$(Managed)\UnityEngine.InputModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(Managed)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(Managed)\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(Managed)\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(Managed)\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+
+    <!-- Game code: Fungus (SayDialog/Writer/MenuDialog/TextTagParser) and the TG_* game classes
+         both live in Assembly-CSharp. Unobfuscated, so we bind by real names. -->
+    <Reference Include="Assembly-CSharp"><HintPath>$(Managed)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Speech: UniversalSpeech (NVDA/JAWS/SAPI/braille) behind a managed wrapper.
+         Private=true so the managed DLL lands in bin/ for the deploy target below. -->
+    <PackageReference Include="UnityAccessibilityLib" Version="2.0.0" Private="true" />
+  </ItemGroup>
+
+  <!--
+    Deploy after every build. Without this the build only writes bin/ and the game keeps running
+    an older copy, so fixes appear "not to work" because they were never deployed.
+  -->
+  <!-- SkipDeploy=true is used by package.ps1: building a distributable must not depend on a
+       game install being present or writable. -->
+  <Target Name="DeployToGameMods" AfterTargets="Build" Condition="Exists('$(GameDir)') And '$(SkipDeploy)' != 'true'">
+    <MakeDir Directories="$(GameDir)\Mods" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameDir)\Mods" OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -&gt; $(GameDir)\Mods" />
+
+    <!-- A library PackageReference is NOT copied to the output dir by default, so pull
+         UnityAccessibilityLib.dll straight from the resolved reference set by filename
+         (robust against NuGet cache location). MelonLoader resolves it from Mods\. -->
+    <ItemGroup>
+      <UalManagedDll Include="@(ReferenceCopyLocalPaths);@(ReferencePathWithRefAssemblies);@(ReferencePath)"
+                     Condition="'%(Filename)' == 'UnityAccessibilityLib'" />
+    </ItemGroup>
+    <Error Text="Could not locate UnityAccessibilityLib.dll among resolved references; cannot deploy."
+           Condition="'@(UalManagedDll)' == ''" />
+    <Copy SourceFiles="@(UalManagedDll)" DestinationFolder="$(GameDir)\Mods" OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Deployed UnityAccessibilityLib.dll -&gt; $(GameDir)\Mods" />
+
+    <!-- The native speech DLLs must sit in the GAME ROOT (next to the exe), not Mods:
+         UniversalSpeech is P/Invoked by bare name and in turn dlopens its screen-reader client
+         DLLs (nvdaControllerClient.dll) from its own directory, so the WHOLE SET must be
+         co-located or NVDA output silently degrades to SAPI.
+         *** THESE MUST BE THE 32-BIT (x86) BUILDS *** - CoffeeTalk.exe is PE32/i386. A 64-bit
+         UniversalSpeech.dll throws BadImageFormatException at P/Invoke time. -->
+    <ItemGroup>
+      <NativeSpeechDll Include="$(MSBuildProjectDirectory)\libs\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeSpeechDll)" DestinationFolder="$(GameDir)" OverwriteReadOnlyFiles="true"
+          Condition="'@(NativeSpeechDll)' != ''" />
+    <Message Importance="high" Text="Deployed native speech DLLs (@(NativeSpeechDll->'%(Filename)%(Extension)')) -&gt; $(GameDir)"
+             Condition="'@(NativeSpeechDll)' != ''" />
+    <Warning Text="libs\*.dll NOT FOUND - speech will be silent. Place the x86 UniversalSpeech.dll + nvdaControllerClient.dll in libs\."
+             Condition="'@(NativeSpeechDll)' == ''" />
+  </Target>
+
+</Project>
