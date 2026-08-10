@@ -2,7 +2,65 @@
 
 **Last updated:** 2026-08-10.
 
-## ⚠ LATEST (2026-08-10): THE FULL GAME IS INSTALLED — Phase 6 audited, 2 defects fixed
+## ✅ LATEST (2026-08-10): FIRST LIVE RETAIL RUNS — the profile picker WORKS
+
+The mod is installed on retail (MelonLoader v0.7.1 x86 copied from the demo) and has now RUN.
+Three runs, logs `26-8-10_17-14-43`, `_17-16-8`, `_17-17-11`. **This is the first live evidence
+this project has ever had from the full game.**
+
+**Confirmed live:** `Game Arch: x86`, `Coffee Talk Access v0.7.0`, `SpeechManager.Initialize() =
+True`, **`[Patch] All 51 expected hooks are live`** — and the headline:
+
+```
+[Focus] supplied missing keyboard selection on SELECT_PROFILE: SelectProfileFlipUI(Clone)
+[UAL] [Menu] Slot 1 of 3, Drew, Último salvamento: ... 4 percent complete. Left and right to choose, Enter to open.
+[UAL] [Menu] Slot 2 of 3, empty, create new profile
+```
+
+**The screen that was silent and keyboard-dead now supplies a cursor and reads every slot,
+including a real save's name and progress.** Left/right navigation works. FocusRecovery's
+whitelist entry and the parent-chain labeller both did exactly what they were built to do, first
+time, on a screen no one had ever heard.
+
+### ⚠ The game was running in PORTUGUESE, and my "language = English" check was wrong
+
+`Último salvamento`, `PRESSIONE QUALQUER TECLA`. **Retail does NOT read the language from the
+registry** — that is the DEMO's mechanism. Retail reads
+`%USERPROFILE%\AppData\LocalLow\Toge Productions\CoffeeTalk\Data\SettingsData`, a JSON file, which
+said `"currentLanguage": "Brazil"`. I checked the demo's registry key and reported English for a
+build that never consults it. **Verify the setting against the BUILD IN FRONT OF YOU.**
+
+To get the language picker back: it is gated on `TG_Static.isFirstPlay`, which is **not
+serialized** — `TG_SaveLoadManager.LoadSetting` sets it true only when the `SettingsData` file is
+MISSING. So deleting that file is the only way to reach the picker; editing the language string in
+place fixes the language but skips the screen. Deleted 2026-08-10 (backup
+`SettingsData.bak-172142`); the `ProfileData0` save is untouched.
+
+### The double-patch diagnostic was crying wolf (fixed in v0.7.1)
+
+Two red `DOUBLE-PATCHED` errors at every startup, **neither of them real**:
+- The check SUMMED prefixes and postfixes, so `MouseOverManager`'s deliberate prefix (which only
+  raises a re-entrancy flag) beside its postfix counted as "2x". Now counted per kind.
+- `AddIngredient` really does carry two postfixes, but only `BrewingPatches` speaks —
+  `StatsPatches.AfterAddIngredientClearPreview` just nulls `PendingStats`. Now exempted, with the
+  reason recorded at the exemption.
+
+**The rule the check cannot see: it counts HOOKS, but what matters is how many SPEAK.** A
+diagnostic that reports a bug which is not there costs as much trust as one that misses a real bug.
+
+### Middleware: only TWO assemblies meaningfully differ
+
+Swept all 84 shared managed assemblies. Nothing removed. ⚠ **Compare by BYTES then by API SURFACE,
+never by file size** — four assemblies differ byte-wise at IDENTICAL sizes
+(`Unity.TextMeshPro`, `Assembly-CSharp-firstpass`, `Unity.2D.PixelPerfect`,
+`Unity.Analytics.DataPrivacy`) and a size-based diff missed all four. Dumping every type and member
+of each gave an EMPTY diff: only the MVID changed, i.e. a rebuild. So TextMeshPro is not a risk,
+and I2.Loc (inside `Assembly-CSharp-firstpass`) is unchanged, so localization behaves the same.
+Only `Assembly-CSharp` and `InControl` really differ, both already audited. The 22 retail-only
+assemblies (System.Data, Windows.Forms, Sqlite, Addressables, …) are Workshop/DLC support and the
+mod references none of them.
+
+## Previously (2026-08-10): THE FULL GAME IS INSTALLED — Phase 6 audited, 2 defects fixed
 
 Retail lives at `D:\SteamLibrary\steamapps\Common\Coffee Talk` (`CoffeeTalk_Data`, no space).
 **MelonLoader is NOT installed there yet, so nothing in this section has RUN — it is all offline

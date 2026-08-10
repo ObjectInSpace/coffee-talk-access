@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.0", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.7.1", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -325,6 +325,13 @@ namespace CoffeeTalkAccess
         /// method ONCE however many times it was patched, so a double application reads as a
         /// perfectly healthy "46 method(s) patched / all expected hooks live" while the player hears
         /// everything twice. Counting the patch OWNERS per method is what distinguishes them.
+        ///
+        /// ⚠ It counts PREFIXES and POSTFIXES SEPARATELY, and exempts the methods we deliberately
+        /// hook more than once. Both refinements came from the first three retail runs, where this
+        /// check printed two red DOUBLE-PATCHED errors at every startup and NEITHER was real: one
+        /// was a prefix beside a postfix, the other a speaking postfix beside a state-clearing one.
+        /// A check that reports a bug that is not there costs as much trust as one that misses a
+        /// bug that is - the player cannot tell which kind they are looking at.
         /// </summary>
         private static void ReportDoublePatches(HarmonyLib.Harmony harmony)
         {
@@ -336,12 +343,21 @@ namespace CoffeeTalkAccess
                 HarmonyLib.Patches info = HarmonyLib.Harmony.GetPatchInfo(m);
                 if (info == null) continue;
 
-                int ours = 0;
-                foreach (HarmonyLib.Patch p in info.Postfixes)
-                    if (p.owner == harmony.Id) ours++;
+                // ⚠ COUNT THE TWO KINDS SEPARATELY. Summing them was a false alarm: a PREFIX plus a
+                // POSTFIX on the same method is one of each and entirely normal, but it totalled 2
+                // and was reported as "it will speak twice". Live proof, the first three retail runs
+                // (26-8-10_17-14-43 and two more): TG_MainMenuManager.MouseOverManager was flagged
+                // every startup, when MenuPatches deliberately has BeforeMouseOverManager (a prefix
+                // that only raises a re-entrancy flag) alongside AfterMouseOverManager. Nothing
+                // spoke twice. Double APPLICATION means the same KIND applied twice over.
+                int ourPrefixes = 0;
+                int ourPostfixes = 0;
                 foreach (HarmonyLib.Patch p in info.Prefixes)
-                    if (p.owner == harmony.Id) ours++;
+                    if (p.owner == harmony.Id) ourPrefixes++;
+                foreach (HarmonyLib.Patch p in info.Postfixes)
+                    if (p.owner == harmony.Id) ourPostfixes++;
 
+                int ours = System.Math.Max(ourPrefixes, ourPostfixes);
                 if (ours <= 1) continue;
 
                 // TG_SmartPhoneApps.Close is a SHARED base method that several app readers hook on
@@ -351,6 +367,17 @@ namespace CoffeeTalkAccess
                 // hunts for, and flagging it would print a red error on every startup. A diagnostic
                 // that cries wolf teaches the player to ignore the real ones.
                 if (m.DeclaringType?.Name == "TG_SmartPhoneApps" && m.Name == "Close") continue;
+
+                // TG_DrinkManager.AddIngredient is the same shape: BrewingPatches.AfterAddIngredient
+                // is the one that SPEAKS, while StatsPatches.AfterAddIngredientClearPreview only
+                // sets PendingStats = null. Two postfixes, one voice - deliberate, and flagged on
+                // every one of the first three retail runs until this exemption existed.
+                //
+                // ⚠ The general rule this check can never see: it counts HOOKS, but the thing that
+                // matters is how many of them SPEAK. Where a second hook exists purely to clear
+                // state, exempt it HERE and say why, rather than dropping the check or letting it
+                // cry wolf - a diagnostic the player learns to ignore is worse than none.
+                if (m.DeclaringType?.Name == "TG_DrinkManager" && m.Name == "AddIngredient") continue;
 
                 doubled++;
                 MelonLogger.Error("[Patch] DOUBLE-PATCHED (" + ours + "x): "
