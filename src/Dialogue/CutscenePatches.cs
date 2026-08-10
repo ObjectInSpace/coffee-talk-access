@@ -163,17 +163,51 @@ namespace CoffeeTalkAccess.Dialogue
         }
 
         private static string _lastPrompt;
+        private static int _lastPromptId;
 
         /// <summary>
         /// Reads the prompt's own Text component (`blinkTextArea`, declared on TG_BlinkingText) and
-        /// speaks it. Deduped separately because SetTextLocalization re-fires on every input-device
-        /// change, which would otherwise repeat the prompt when the player merely touches the pad.
+        /// speaks it.
+        ///
+        /// ⚠ DEDUPED ON THE PROMPT OBJECT, NOT ON ITS TEXT. The text dedup below was here first and
+        /// CANNOT work on its own, for a reason worth stating plainly: the prompt's wording
+        /// legitimately ALTERNATES. SetTextLocalization assigns
+        /// `blinkTextArea.text = GetLocalizationPressAnyText()`, which returns "PRESS ANY KEY" in
+        /// keyboard mode and "PRESS ANY BUTTON" on a pad - so every device flip produces genuinely
+        /// NEW text and sails straight through a string comparison.
+        ///
+        /// And the game flips modes far more than anyone would guess. TG_ControllerInputManager
+        /// re-evaluates the mode from OnGUI (several times per frame) with no hysteresis, and its
+        /// ListenControllers() compares fourteen analog LEVELS against exact zero - so a resting
+        /// stick or a slightly-pulled trigger re-fires this delegate indefinitely. Live proof, log
+        /// 26-8-10_17-39-3: this prompt spoke 23 times in one session, twice in pairs 3 ms and 5 ms
+        /// apart, and the player reported it as "switching between the keyboard and the gamepad
+        /// feels a bit weird".
+        ///
+        /// The INSTANCE is the honest key: a re-fire on the same live prompt object is by
+        /// definition the device-change re-localization, never a new prompt appearing. The first
+        /// call per object is still spoken, because TG_PressAnyBlinkTextUI.Start calls
+        /// SetTextLocalization() directly before the delegate can ever fire - so the genuine "this
+        /// prompt just appeared" moment is preserved exactly.
+        ///
+        /// The string check is KEPT as a secondary guard: it costs nothing and still catches a
+        /// re-created prompt object that shows identical text.
         /// </summary>
         private static void SpeakPrompt(object prompt, string source)
         {
             try
             {
                 if (prompt == null) return;
+
+                // Same prompt object as last time -> this is the device-change re-localization.
+                // Return BEFORE reading the text, so a mode flip costs nothing at all.
+                UnityEngine.Object asUnityObject = prompt as UnityEngine.Object;
+                if (asUnityObject != null)
+                {
+                    int id = asUnityObject.GetInstanceID();
+                    if (id == _lastPromptId) return;
+                    _lastPromptId = id;
+                }
 
                 object field = AccessTools.Field(prompt.GetType(), "blinkTextArea")?.GetValue(prompt);
                 string text = null;

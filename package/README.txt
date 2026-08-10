@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.7.4
+Version 0.7.5
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -9,6 +9,17 @@ navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
+
+WHAT IS NEW IN 0.7.5
+
+  - Switching between the keyboard and the gamepad is much quieter. The game
+    re-checks which device you are using many times a second, and each check
+    could re-read the "press any key" prompt and move your cursor. The prompt
+    now speaks once per screen, and if the cursor is lost you are put back on
+    the control you were already on instead of somewhere else.
+
+  - Note: switching TO a gamepad still jumps to the first profile. That is the
+    game moving its own cursor, and it does the same without the mod.
 
 WHAT IS NEW IN 0.7.4
 

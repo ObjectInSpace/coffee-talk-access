@@ -59,6 +59,36 @@ namespace CoffeeTalkAccess.Menus
         private static string _lastRecoveredState;
 
         /// <summary>
+        /// The control the player was last genuinely on, so a recovery can put them BACK rather than
+        /// somewhere arbitrary.
+        ///
+        /// Why this exists: FindEntryControl returns the first interactable Selectable in
+        /// FindObjectsOfType order, which is the right answer when a screen opens with no cursor and
+        /// the WRONG answer when a cursor already existed and was destroyed. The game destroys it
+        /// routinely - every switch to keyboard mode runs CheckRemovedState, whose default branch
+        /// nulls the EventSystem selection for every state it does not name (SELECT_PROFILE,
+        /// POP_UP_*, CALENDAR_LOAD_GAME, MOD_MENU among them). Live proof, log 26-8-10_17-39-3:
+        /// mode went to KEYBOARD at 17:41:10.714, recovery fired 346 ms later and announced
+        /// "Slot 3 of 3" while the player was on Slot 1.
+        ///
+        /// Recorded in the healthy-focus branch of Update(), which already runs every frame the
+        /// selection is non-null, so this costs nothing extra.
+        /// </summary>
+        private static GameObject _lastGoodFocus;
+        private static string _lastGoodState;
+        private static float _lastGoodTime;
+
+        /// <summary>
+        /// How long a remembered control stays valid. Far longer than any mode flip (which resolves
+        /// in well under a second) and far shorter than a screen visit.
+        ///
+        /// This is the backstop for the case the other three checks cannot catch: a screen re-entered
+        /// in the SAME state after a long absence, where a pooled prefab happens to still exist. The
+        /// profile slots are literally `SelectProfileFlipUI(Clone)`, so that hazard is real here.
+        /// </summary>
+        private const float MemorySeconds = 5f;
+
+        /// <summary>
         /// States where the game drives the screen through the EventSystem and therefore NEEDS a
         /// selection. Deliberately a whitelist rather than "any state": screens driven by the game's
         /// own private cursor (MAIN_MENU) legitimately run with focus null, and selecting something
@@ -142,7 +172,14 @@ namespace CoffeeTalkAccess.Menus
 
                 if (es.currentSelectedGameObject != null)
                 {
-                    // Focus is healthy. Reset the timer AND the dedup, so the next genuine loss of
+                    // Focus is healthy. Remember WHERE, so that if the game destroys this selection
+                    // (which it does on every switch to keyboard mode) we can put the player back
+                    // instead of guessing. Free: this branch already runs every frame.
+                    _lastGoodFocus = es.currentSelectedGameObject;
+                    _lastGoodState = AccessMod.ReadControllerState();
+                    _lastGoodTime = Time.realtimeSinceStartup;
+
+                    // Reset the timer AND the dedup, so the next genuine loss of
                     // focus on this same screen is treated as new. Without clearing this, a screen
                     // the player leaves and returns to would be recovered once and then never
                     // again - the "uncleared dedup turns a duplicate into permanent silence" trap.
@@ -203,33 +240,23 @@ namespace CoffeeTalkAccess.Menus
                 // else is actively clearing it and retrying every frame would be a fight.
                 if (_lastRecoveredState == state) return;
 
+                // PREFER THE CONTROL THE PLAYER WAS ACTUALLY ON. Only when there is no valid memory
+                // do we fall back to the scene scan, which cannot know where the cursor used to be.
+                Selectable remembered = RememberedTarget(state);
+                if (remembered != null)
+                {
+                    _lastRecoveredState = state;
+                    SelectAndNotify(remembered);
+                    MelonLogger.Msg("[Focus] restored the control you were on: "
+                        + remembered.gameObject.name);
+                    return;
+                }
+
                 Selectable target = FindEntryControl(state);
                 if (target == null) return;
 
                 _lastRecoveredState = state;
-                target.Select();
-
-                // Tell the game's OWN handler that this object was selected.
-                //
-                // ⚠ THIS MUST GO THROUGH THE ISelectHandler COMPONENTS, NOT `(target as Button)`.
-                // That older form called UnityEngine.UI.Button.OnSelect, which does NOT reach
-                // TG_Button.MouseHoverEvent - TG_Button is a SEPARATE MonoBehaviour that implements
-                // ISelectHandler in its own right and merely HOLDS a `button` reference.
-                //
-                // On most screens that omission was invisible, because the game only needed the
-                // EventSystem's selection. On the profile picker it desynchronised two cursors:
-                // TG_ProfileSlotFlipUI.MouseHoverEvent is what calls
-                // TG_ProfileUIManager.SetCurrentSelected(indexButton), and `currentSelected` is what
-                // Enter/Escape/X actually act on (HandleAButtonCurrentSelectProfileButton et al).
-                // So the mod moved the EventSystem while the game's own pointer stayed put, and
-                // Enter opened a DIFFERENT profile from the one just announced. Live proof, log
-                // 26-8-10_17-47-22: "[Focus] Slot 3 of 3, Barista" at :53.953 followed 140 ms later
-                // by "[Profile] Drew, open" - reported by the player as "it selects a different one".
-                //
-                // ExecuteEvents.Execute walks to the handler wherever it lives, so this drives the
-                // GAME's single cursor instead of introducing a second one (rule 4).
-                ExecuteEvents.Execute(target.gameObject, new BaseEventData(EventSystem.current),
-                    ExecuteEvents.selectHandler);
+                SelectAndNotify(target);
 
                 MelonLogger.Msg("[Focus] supplied missing keyboard selection on " + state
                     + ": " + target.gameObject.name);
@@ -257,6 +284,75 @@ namespace CoffeeTalkAccess.Menus
             if (phone == null) return false;
 
             return !phone.canOpenSmartPhone;
+        }
+
+        /// <summary>
+        /// Selects a control AND tells the game's own handler about it.
+        ///
+        /// ⚠ BOTH HALVES ARE REQUIRED, and they live in one helper so the memory path and the scan
+        /// path cannot drift apart. `Select()` alone moves only Unity's EventSystem; it does NOT
+        /// reach TG_Button, which is a SEPARATE MonoBehaviour implementing ISelectHandler in its own
+        /// right and merely HOLDING a `button` reference. (An older form here called
+        /// `(target as Button)?.OnSelect(null)`, i.e. UnityEngine.UI.Button.OnSelect, which is a
+        /// dead end for the same reason.)
+        ///
+        /// On most screens that omission was invisible. On the profile picker it desynchronised two
+        /// cursors: TG_ProfileSlotFlipUI.MouseHoverEvent is what calls
+        /// TG_ProfileUIManager.SetCurrentSelected(indexButton), and `currentSelected` is what
+        /// Enter/Escape/X actually act on. So the mod moved the EventSystem while the game's own
+        /// pointer stayed put, and Enter opened a DIFFERENT profile from the one just announced.
+        /// Live proof, log 26-8-10_17-47-22: "[Focus] Slot 3 of 3, Barista" at :53.953 followed
+        /// 140 ms later by "[Profile] Drew, open" - reported as "it selects a different one".
+        ///
+        /// ExecuteEvents.Execute finds the handler wherever it lives, so this drives the GAME's
+        /// single cursor rather than introducing a second one (rule 4).
+        /// </summary>
+        private static void SelectAndNotify(Selectable target)
+        {
+            target.Select();
+            ExecuteEvents.Execute(target.gameObject, new BaseEventData(EventSystem.current),
+                ExecuteEvents.selectHandler);
+        }
+
+        /// <summary>
+        /// The remembered control, if it is still a safe thing to select; otherwise null.
+        ///
+        /// Four independent checks, all applied at USE time rather than at record time, because a
+        /// control can be perfectly valid when recorded and destroyed a frame later:
+        ///  1. SAME SCREEN. The state string is the game's own screen machine, and it is what
+        ///     decided which branch of CheckRemovedState ran in the first place. If the screen
+        ///     changed, the memory is void - this is the primary guard against resurrecting a
+        ///     control from a screen that has since closed.
+        ///  2. STILL ALIVE. Unity's overloaded == reports a destroyed object as null, so this
+        ///     catches a torn-down control even when the state string coincidentally matches.
+        ///  3. STILL USABLE. Shares IsUsable with FindEntryControl so the two paths cannot disagree
+        ///     about what "selectable" means.
+        ///  4. STILL FRESH. See MemorySeconds - the backstop for pooled prefabs.
+        /// </summary>
+        private static Selectable RememberedTarget(string state)
+        {
+            if (_lastGoodFocus == null) return null;
+            if (_lastGoodState != state) return null;
+            if (Time.realtimeSinceStartup - _lastGoodTime > MemorySeconds) return null;
+
+            Selectable s = _lastGoodFocus.GetComponent<Selectable>();
+            return IsUsable(s) ? s : null;
+        }
+
+        /// <summary>
+        /// Whether a Selectable is a legitimate thing to hand the player: on screen, interactable,
+        /// and not explicitly excluded from navigation.
+        ///
+        /// A Selectable with Navigation.Mode.None is a display element, not an entry point - the
+        /// game uses exactly that for decorative controls.
+        /// </summary>
+        private static bool IsUsable(Selectable s)
+        {
+            if (s == null) return false;
+            if (!s.gameObject.activeInHierarchy) return false;
+            if (!s.interactable) return false;
+            if (s.navigation.mode == Navigation.Mode.None) return false;
+            return true;
         }
 
         /// <summary>
@@ -406,14 +502,10 @@ namespace CoffeeTalkAccess.Menus
 
             for (int i = 0; i < all.Length; i++)
             {
+                // Shared with the remembered-control path (RememberedTarget), so the two can never
+                // disagree about what counts as a selectable entry point.
                 Selectable s = all[i];
-                if (s == null) continue;
-                if (!s.gameObject.activeInHierarchy) continue;
-                if (!s.interactable) continue;
-
-                // A Selectable with navigation explicitly turned off is a display element, not an
-                // entry point - the game uses Navigation.Mode.None for exactly that.
-                if (s.navigation.mode == Navigation.Mode.None) continue;
+                if (!IsUsable(s)) continue;
 
                 if (scope != null && !s.transform.IsChildOf(scope))
                 {

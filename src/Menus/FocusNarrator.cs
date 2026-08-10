@@ -32,6 +32,12 @@ namespace CoffeeTalkAccess.Menus
     {
         private GameObject _lastFocused;
         private string _lastSpoken;
+
+        /// <summary>
+        /// The game state the dedup above was recorded under. When the game's own state machine
+        /// moves, the dedup is void - see the comment in Update().
+        /// </summary>
+        private string _lastState;
         private float _lastSliderValue = float.NaN;
 
         /// <summary>
@@ -53,9 +59,36 @@ namespace CoffeeTalkAccess.Menus
                 EventSystem es = EventSystem.current;
                 if (es == null) return;
 
+                // ⚠ CLEAR THE DEDUP ON A SCREEN CHANGE - and ONLY on a screen change.
+                //
+                // `_lastSpoken` is what keeps a control from being re-announced when focus is
+                // briefly lost and restored to the SAME control, which the game does constantly:
+                // every switch to keyboard mode runs CheckRemovedState, whose default branch nulls
+                // the EventSystem selection. That suppression is the point, and the null branch
+                // below deliberately does NOT clear `_lastSpoken` for exactly that reason.
+                //
+                // The risk is the mirror image: a label left over from a PREVIOUS screen could
+                // suppress a genuine first announcement on a new one, leaving it silent - the worst
+                // failure mode there is. So the dedup is invalidated when the game's own state
+                // machine moves, which is the one event that means "different screen, all bets off".
+                //
+                // ⚠ Polarity matters: CLEAR here, never set. Getting this backwards produces either
+                // a stutter (clearing too often) or a silent screen (clearing too rarely).
+                string state = AccessMod.ReadControllerState();
+                if (state != _lastState)
+                {
+                    _lastState = state;
+                    _lastSpoken = null;
+                    _lastFocused = null;
+                }
+
                 GameObject current = es.currentSelectedGameObject;
                 if (current == null)
                 {
+                    // ⚠ `_lastSpoken` is deliberately NOT cleared here. A null selection is usually
+                    // the game mid-transition (or a mode flip), and the control that comes back is
+                    // usually the same one. Clearing would turn every such blip into a repeat
+                    // announcement - the "it re-announces itself" symptom reported live.
                     _lastFocused = null;
                     return;
                 }
