@@ -187,10 +187,27 @@ namespace CoffeeTalkAccess.Menus
                 _lastRecoveredState = state;
                 target.Select();
 
-                // OnSelect is what makes the game's own TG_Button react (hover SFX, and the
-                // ISelectHandler path that computes brewing stat previews). The game calls both
-                // wherever it does this itself, so we match it rather than half-doing it.
-                (target as Button)?.OnSelect(null);
+                // Tell the game's OWN handler that this object was selected.
+                //
+                // ⚠ THIS MUST GO THROUGH THE ISelectHandler COMPONENTS, NOT `(target as Button)`.
+                // That older form called UnityEngine.UI.Button.OnSelect, which does NOT reach
+                // TG_Button.MouseHoverEvent - TG_Button is a SEPARATE MonoBehaviour that implements
+                // ISelectHandler in its own right and merely HOLDS a `button` reference.
+                //
+                // On most screens that omission was invisible, because the game only needed the
+                // EventSystem's selection. On the profile picker it desynchronised two cursors:
+                // TG_ProfileSlotFlipUI.MouseHoverEvent is what calls
+                // TG_ProfileUIManager.SetCurrentSelected(indexButton), and `currentSelected` is what
+                // Enter/Escape/X actually act on (HandleAButtonCurrentSelectProfileButton et al).
+                // So the mod moved the EventSystem while the game's own pointer stayed put, and
+                // Enter opened a DIFFERENT profile from the one just announced. Live proof, log
+                // 26-8-10_17-47-22: "[Focus] Slot 3 of 3, Barista" at :53.953 followed 140 ms later
+                // by "[Profile] Drew, open" - reported by the player as "it selects a different one".
+                //
+                // ExecuteEvents.Execute walks to the handler wherever it lives, so this drives the
+                // GAME's single cursor instead of introducing a second one (rule 4).
+                ExecuteEvents.Execute(target.gameObject, new BaseEventData(EventSystem.current),
+                    ExecuteEvents.selectHandler);
 
                 MelonLogger.Msg("[Focus] supplied missing keyboard selection on " + state
                     + ": " + target.gameObject.name);
