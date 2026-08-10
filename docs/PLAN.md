@@ -547,12 +547,60 @@ them, mark them untested, and do not let "untested" block phases 2-4.
 
 ## Phase 6 — the full game
 
-- ⬜ Re-verify every hook against the retail assembly (names may differ from the demo).
-- ⬜ Daily cutscenes — same `TG_CutsceneManager` machinery as the opening, likely already covered
-  by the base-class hook.
-- 🔶 Endless mode (`TG_EndlessMode*`) — **likely ALREADY COVERED for free**:
-  `TG_EndlessModeDialogManager.SetSayDialogText:36` calls `obj.Say(...)`, which the existing
-  `SayDialog.Say` hook catches. Verify rather than rebuild.
+### Offline retail-readiness audit (2026-08-10) — the checkable parts are DONE
+
+Reflected over the shipped `Assembly-CSharp.dll` to resolve every hook target and every
+string-named reflection lookup the mod performs. **Result: 46/46 types and 89/89 members
+resolve.** The `nameof(...)` targets are additionally proven by the build compiling at all;
+the string-named ones (~120 sites, the ones that fail SILENTLY) are what this audit covers.
+
+⚠ **This validates against the DEMO assembly.** It cannot prove retail matches — it proves our
+names are right for the build we have, and it leaves a re-runnable probe for the day a retail
+binary exists. That remains the one genuinely blocked item.
+
+**Bitness is NOT a retail risk — settled, do not re-derive.** Retail Coffee Talk on Windows is
+32-bit on every store (PCGamingWiki records `windows 64-bit exe = false`; Steam's own API lists
+no 64-bit requirement). The demo is PE32/i386 end to end, verified by reading PE headers, and
+its `globalgamemanagers` records Unity **2018.4.9f1** — the same engine PCGamingWiki lists for
+retail, and the demo is post-2021-Edition, so that update did not re-engine the game. The x86
+MelonLoader + x86 native speech DLLs are correct for retail. ⚠ The Microsoft Store build is the
+exception: it is UWP-packaged and untested; prefer Steam or GOG.
+
+⚠ **Retail/demo differences are SERIALIZED SCENE DATA, not different code.** `TG_Static` holds
+both `SCENE_INGAME` ("InGameScene") and `SCENE_INGAME_DEMO` ("InGameDemoScene"), and the demo
+also carries `mainMenuGamePanelDemo`, `inGamePausePanelDemo`, `cutsceneObjectDemo` and
+`OPENING_CUTSCENE_DEMO`. One assembly, different objects. So retail is unlikely to rename our
+targets wholesale — but it WILL reach code paths the demo never runs.
+
+**Verified this pass — three Phase 6 unknowns closed:**
+
+- ✅ **Endless mode is COVERED FOR FREE — now CONFIRMED, not "likely."**
+  `TG_EndlessModeDialogManager.SetSayDialogText:36` calls `obj.Say(...)` and `:35` calls
+  `obj.SetCharacterName(...)`; both are hooked by `SayPatches`. Do not rebuild.
+- ✅ **The base-class `TG_SmartPhoneApps.Open` hook is SOUND.** All six app subclasses override
+  `Open`, which would normally mean a base postfix never runs — but every one of them calls
+  `base.Open(...)` (music first, newspaper/social last, recipes inside a coroutine callback).
+  `Close` is overridden by nobody, so those three hooks are safe outright.
+- ⚠ **`TG_CutsceneManager.SetDialogueText` IS an empty virtual (IL=1, a bare `ret`).** The hook
+  on it therefore never fires — but this is NOT a live defect: the concrete
+  `TG_OpeningCutSceneManager.SetDialogueText` is hooked separately (IL=78) and its override does
+  not call base. The base hook is a deliberate catch-all, correctly documented in the source.
+  **It is a retail LANDMINE though:** if retail's daily cutscenes use a NEW subclass, the
+  base hook will not cover it, it will attach and report GREEN, and daily cutscenes will be
+  silent. Check for new `TG_CutsceneManager` subclasses first thing on retail.
+- ✅ **The `TG_UIMenuContent.EventHoverMouse` base hook is SOUND** (options + save/load rows).
+  Both `TG_OptionButtonContent` and `TG_SaveLoadButtonContent` override it and both call
+  `base.EventHoverMouse()` on their first line.
+
+**Re-run this audit with `tools\verify-hook-targets.ps1 -GameDir "<retail path>"`.** It checks
+the string-named types/members AND the base-class override chains, and prints the expected
+counts to compare against. It is the single highest-value first action on a retail binary.
+
+Remaining, genuinely blocked on the binary:
+
+- ⬜ Re-run the reflection probe against the retail assembly (names may differ from the demo).
+- ⬜ Daily cutscenes — see the landmine above. `TG_CutsceneManager` has exactly ONE subclass on
+  the demo (`TG_OpeningCutSceneManager`); enumerate them again on retail before assuming cover.
 - ⬜ Save/load across real profiles.
 
 ## Phone content from available data (planned 2026-08-10, not started)
