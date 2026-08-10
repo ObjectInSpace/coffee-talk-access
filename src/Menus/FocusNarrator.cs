@@ -413,6 +413,76 @@ namespace CoffeeTalkAccess.Menus
         }
 
         /// <summary>
+        /// Appends what a phone app icon actually DOES to its brand name.
+        ///
+        /// The phone's four icons carry in-fiction product names - "Tomodachill", "Shuffld",
+        /// "Brewpad", "The Evening Whisperss" - and nothing else. A sighted player sees an icon and
+        /// learns the brand in seconds; by ear those names are undiscoverable, and the player asked
+        /// outright "how do I get to social media?" after having opened it twice without knowing.
+        ///
+        /// So the brand is KEPT and the function is appended: "Tomodachill, social media". Keeping
+        /// the brand matters - it is what the game calls it, it is what a guide or a friend will
+        /// say, and replacing it would leave the player unable to match what they hear against any
+        /// outside reference. Same reasoning as the recipes tabs, which speak the app's own
+        /// "Matcha" rather than the enum's "Green Tea".
+        ///
+        /// Identified by comparing against TG_SmartPhoneManager's OWN serialized button references
+        /// rather than by object name or by icon, so a localized or renamed prefab still resolves.
+        /// </summary>
+        private static string GetPhoneAppLabel(GameObject go)
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_SmartPhoneManager");
+                if (mgrType == null) return string.Empty;
+
+                UnityEngine.Object mgr = UnityEngine.Object.FindObjectOfType(mgrType);
+                if (mgr == null) return string.Empty;
+
+                string function = null;
+                if (IsAppButton(mgrType, mgr, "socialMediaAppButton", go)) function = "social media";
+                else if (IsAppButton(mgrType, mgr, "musicAppButton", go)) function = "music";
+                else if (IsAppButton(mgrType, mgr, "recipesDrinkAppButton", go)) function = "drink recipes";
+                else if (IsAppButton(mgrType, mgr, "newsPaperAppButton", go)) function = "newspaper";
+
+                if (function == null) return string.Empty;
+
+                // The brand name lives on a child Text (mixed types on this screen, as elsewhere in
+                // this game). If it cannot be read we still say what the app IS, which is the
+                // useful half - never fall back to the raw object name here.
+                string brand = null;
+                Text child = go.GetComponentInChildren<Text>();
+                if (child != null && !string.IsNullOrEmpty(child.text)) brand = Clean(child.text);
+
+                if (string.IsNullOrEmpty(brand))
+                {
+                    TextMeshProUGUI childTmp = go.GetComponentInChildren<TextMeshProUGUI>();
+                    if (childTmp != null && !string.IsNullOrEmpty(childTmp.text)) brand = Clean(childTmp.text);
+                }
+
+                return string.IsNullOrEmpty(brand) ? Capitalize(function) : brand + ", " + function;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>True when the focused object IS the named app button on the phone manager.</summary>
+        private static bool IsAppButton(Type mgrType, UnityEngine.Object mgr, string field, GameObject go)
+        {
+            Button b = AccessTools.Field(mgrType, field)?.GetValue(mgr) as Button;
+            return b != null && ReferenceEquals(b.gameObject, go);
+        }
+
+        /// <summary>Upper-cases the first letter, so a bare function reads as a caption.</summary>
+        private static string Capitalize(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            return char.ToUpperInvariant(s[0]) + s.Substring(1);
+        }
+
+        /// <summary>
         /// Names a music playlist row, searching the focused object and its parents.
         ///
         /// Same arrangement as the friend list and the recipe rows: the EventSystem focuses the
@@ -520,6 +590,12 @@ namespace CoffeeTalkAccess.Menus
                 // Texts are found in hierarchy order, which puts the artist first as often as not.
                 string songLabel = GetSongRowLabel(go);
                 if (!string.IsNullOrEmpty(songLabel)) return songLabel;
+
+                // Phone app icons carry only a brand name ("Tomodachill"), which says nothing about
+                // what the app does. Checked before the generic scan below, because that scan WOULD
+                // find the brand Text and return it alone - which is exactly the unhelpful half.
+                string phoneAppLabel = GetPhoneAppLabel(go);
+                if (!string.IsNullOrEmpty(phoneAppLabel)) return phoneAppLabel;
 
                 // Profile slots, the same parent-chain arrangement once more. This one matters most
                 // of all: on retail the picker is the FIRST interactive screen (PRESS_ANY_KEY goes

@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.8.2
+Version 0.8.3
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -9,6 +9,16 @@ navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
+
+WHAT IS NEW IN 0.8.3
+
+  - The phone's apps now say what they are. They are named like real products
+    - "Tomodachill", "Shuffld", "Brewpad", "The Evening Whisperss" - which
+    tells you nothing by ear, so the mod now reads "Tomodachill, social
+    media" and so on. See THE SMARTPHONE below for the full list.
+
+  - Social media is confirmed working, both the friend list and a character's
+    profile ("Gala. Birthday: 13 September. 2 more things to learn").
 
 WHAT IS NEW IN 0.8.2
 
@@ -61,9 +71,9 @@ tested by playing the retail game, not just by reading its code.
     gamepad is far quieter, and the phone no longer hands you a coffee
     ingredient instead of the phone.
 
-  - Not yet exercised in play, so treat as unproven: the chat log, the
-    social media app, and the ending epilogues. Reports on these are
-    especially welcome.
+  - Not yet exercised in play, so treat as unproven: the chat log and the
+    ending epilogues. Reports on these are especially welcome.
+
 
 WHAT YOU NEED
 
@@ -145,6 +155,21 @@ Note that Enter means "open this card" on the row and "load" once a card is
 open, because the card has two sides. The mod says which side you are on.
 
 
+THE SMARTPHONE (FULL GAME)
+
+The phone's four apps are named like real products, so the mod now says what
+each one does as well:
+
+  Tomodachill, social media    Your friend list. Up and down for characters,
+                               Enter for a character's profile and trivia.
+  Shuffld, music               The music player. Enter plays a track.
+  Brewpad, drink recipes       Recipes by category, with how many are locked.
+  The Evening Whisperss,       The newspaper archive. Down arrow reads the
+    newspaper                  article, left and right change days.
+
+Escape backs out of an app, and again to close the phone.
+
+
 IF YOU USE A CONTROLLER
 
 The game's own gamepad support works and the mod does not interfere with it,
@@ -193,8 +218,8 @@ KNOWN LIMITS
   - No one has finished a whole playthrough with this mod yet. The early game
     is well tested; the later it gets, the less it has been exercised.
   - These screens have never run in play and may have rough edges: the chat
-    log, the social media app, and the ending epilogues. Reports on them are
-    genuinely useful.
+    log and the ending epilogues. Reports on them are genuinely useful.
+
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
   - Latte art is a drawing minigame. Only whether you served the drink is
