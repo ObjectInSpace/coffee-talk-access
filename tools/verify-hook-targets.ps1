@@ -119,10 +119,6 @@ $members = @(
  'TG_ControllerInputManager|HandlerControllerPress|M','TG_ControllerInputManager|AButtonPressed|M',
  'TG_ControllerInputManager|playerActions|F','TG_ControllerInputManager|currentTypeController|F',
  'TG_ControllerInputManager|keyboardHotkeyManager|F',
- # PhoneHotkey invokes this by string to supply the Tab -> open phone trigger that
- # HandlerKeyboard never delivers in JOYSTICK mode. It is PRIVATE, so a rename would
- # return null silently and leave Tab dead again with a clean log.
- 'TG_KeyboardHotkeyManager|SmartPhoneToggle|M',
  'TG_InitScreen|languageSettingGO|F','TG_Static|languageList|F','TG_Static|userSettingsData|F',
  'TG_Static|allCharacterDataList|F','TG_Static|profileData|F','TG_Static|localizer|F',
  'TG_Static|CheckContainsUnlockedCharacterDataIdx|M',

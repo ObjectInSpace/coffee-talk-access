@@ -45,7 +45,7 @@ namespace CoffeeTalkAccess.FullGame
     /// is that ControllerHandle never runs, so B/LB/RB have no equivalent - which AfterUpdate
     /// supplies as Tab and [ / ], calling the game's own code. When the game gates a WORKING
     /// implementation behind JOYSTICK, supply the missing trigger; do not rebuild the screen around
-    /// what the keyboard would have done. See BrewingPatches.AfterSetIngredientsButton.
+    /// what the keyboard would have done. See BrewingPatches.AfterBrewingEntry.
     /// </summary>
     /// ⚠ BOUND ENTIRELY BY STRING, and attached MANUALLY - never by [HarmonyPatch] attribute.
     /// TG_ModManagerUI does not exist in the DEMO assembly at all (MOD_MENU is the one value retail

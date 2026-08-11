@@ -241,11 +241,15 @@ namespace CoffeeTalkAccess
                 // private), which is the failure mode this list exists to catch: a rename would
                 // leave the arrow keys dead on every screen with an otherwise clean log. It is also
                 // the hook whose HOST was wrong once - see KeyboardNav.AfterControllerUpdate.
-                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit) and PhoneHotkey
-                // (Tab -> smartphone). All three hooks share this target deliberately;
-                // ReportDoublePatches exempts it by name. The three Tab readers are separated by
-                // STATE - MAIN_MENU, MOD_MENU and BREWING/IN_DIALOGUE respectively - so a single
-                // press can only ever match one.
+                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit). Both hooks share
+                // this target deliberately; ReportDoublePatches exempts it by name.
+                //
+                // ⚠ DO NOT ADD A TAB -> SMARTPHONE HOOK HERE. 0.9.1 did, on the theory that the
+                // game sits in JOYSTICK mode so HandlerKeyboard never runs and never reaches
+                // SmartPhoneToggle. Measured false: log 26-8-11_15-14-29 records
+                // `controller mode = KEYBOARD`, the game's own Tab handling opening the phone, and
+                // ZERO [Hotkey] lines - the hook's own JOYSTICK check made it a permanent no-op.
+                // The game manages this state itself in keyboard mode. See PhoneHotkey's removal.
                 { "TG_ControllerInputManager", "ControllerUpdateFunction" },
                 { "Fungus.SayDialog", "Say" },
                 { "Fungus.SayDialog", "SetCharacterName" },

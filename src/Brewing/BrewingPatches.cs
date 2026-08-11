@@ -95,40 +95,38 @@ namespace CoffeeTalkAccess.Brewing
         /// the day's ingredients are - so it is where "the screen is now ready and nothing is
         /// focused" can actually be observed.
         ///
-        /// ⚠ BUT IT RUNS ON THREE PATHS, NOT ONE, AND ONLY ENTRY WANTS US. The glass_value check
-        /// below is what distinguishes them - see its comment. A "the selection is null right now"
-        /// test is NOT sufficient on its own: AddIngredient nulls it too, transiently, before
-        /// re-selecting a line later. Shipping without the glass check made this hook re-pin the
-        /// cursor to the first ingredient on every add, which read to the player as arrow keys that
-        /// did nothing. ⚠ Check WHICH CALLER you are in, not just what the state looks like.
+        /// ⚠ BUT IT RUNS ON THREE PATHS, NOT ONE, AND ONLY ENTRY WANTS US - which is why this hook
+        /// is NOT on SetIngredientsButton any more. Two attempts to tell the callers apart from a
+        /// postfix on that shared method both shipped bugs:
+        ///
+        ///  - Guarding on "is the selection null?" alone re-pinned the cursor to the first
+        ///    ingredient on EVERY add (AddIngredient nulls it transiently at :663 before
+        ///    re-selecting at :664-673). Read to the player as arrow keys that did nothing.
+        ///  - Guarding on `glass_value == 0` then broke ENTRY ITSELF. BrewModeState calls
+        ///    SetIngredientsButton via SetactiveCanvasBrew BEFORE ResetIngredients zeroes the
+        ///    glass, so on entry the glass still holds the previous drink's value and the guard
+        ///    rejected the one case it existed to serve. Log 26-8-11_15-14-29 shows the result:
+        ///    "[Brew] Glass emptied." with NO entry-selection line after it, and the player left on
+        ///    a phone app control. Reported as "the drinks don't get focus initially".
+        ///
+        /// So stop discriminating and use the game's own signal. ResetIngredients is the LAST call
+        /// in TG_GameManager.BrewModeState (:373) - the state is already BREWING, the canvas is
+        /// already built, the glass is now genuinely zero. It means "the brewing screen has just
+        /// begun" and nothing else, so there is no caller to disambiguate. AddIngredient does not
+        /// call it. ⚠ Hook the signal the game ALREADY has, rather than adding a test that tries to
+        /// infer it.
         ///
         /// Patching the base TG_DrinkManager covers TG_EndlessModeDrinkManager, which inherits it.
         /// </summary>
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(TG_DrinkManager), nameof(TG_DrinkManager.SetIngredientsButton))]
-        public static void AfterSetIngredientsButton(TG_DrinkManager __instance)
+        [HarmonyPatch(typeof(TG_DrinkManager), nameof(TG_DrinkManager.ResetIngredients))]
+        public static void AfterBrewingEntry(TG_DrinkManager __instance)
         {
             try
             {
-                // Only in the brewing screen. SetIngredientsButton also runs during setup and on the
-                // way out, where taking focus would fight whatever owns the screen next.
+                // ResetIngredients also runs on the way out of a serve, where the screen is being
+                // torn down and taking focus would fight whatever owns it next.
                 if (AccessMod.ReadControllerState() != "BREWING") return;
-
-                // ⚠ ONLY ON ENTRY - AN EMPTY GLASS. AddIngredient also calls SetIngredientsButton
-                // (:663), and it does so AFTER incrementing glass_value but BEFORE re-selecting at
-                // :664-673. So at postfix time the selection is momentarily null on that path too,
-                // and without this check we re-pin the cursor to the FIRST interactable ingredient
-                // on every single add.
-                //
-                // That is not theoretical: log 26-8-11 20:13:47-53 shows "supplied the keyboard's
-                // missing entry selection" firing before all three adds, the player arrowing and
-                // hearing nothing move, and three Coffees going into a glass they were steering
-                // elsewhere. Reported as "the arrow keys don't move the focus".
-                //
-                // The game re-selects perfectly well by itself on that path - lastSelected, or the
-                // Brew button once the glass is full - so there is nothing for us to do there. An
-                // empty glass is the one moment no other path covers.
-                if (GlassValue(__instance) != 0) return;
 
                 // The game seeded the cursor itself - JOYSTICK mode, or one of its ungated paths
                 // (SelectAnyInteractableIngredient from a mode flip, the resume-from-phone path).

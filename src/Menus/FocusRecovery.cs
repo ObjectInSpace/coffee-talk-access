@@ -171,7 +171,7 @@ namespace CoffeeTalkAccess.Menus
                 // does NOT prove its ENTRY path works; check which path the run took.
                 //
                 // Brewing IS broken on a keyboard (TG_DrinkManager:547, SelectCocoa, JOYSTICK-gated)
-                // and it is fixed in BrewingPatches.AfterSetIngredientsButton instead of here. That hook sits
+                // and it is fixed in BrewingPatches.AfterBrewingEntry instead of here. That hook sits
                 // on the entry point itself, so it is present for the one moment a selection is
                 // missing and absent for every other. This class watches for ANY null selection,
                 // which on this screen would also catch the one ServeGlassDrink makes deliberately
