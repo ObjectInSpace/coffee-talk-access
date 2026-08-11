@@ -38,9 +38,59 @@ namespace CoffeeTalkAccess.FullGame
     /// ChangeUI:217 even has an explicit KEYBOARD branch that hides the controller hint panel, so
     /// keyboard players were a known case that simply got less.
     /// </summary>
-    [HarmonyPatch]
+    /// ⚠ BOUND ENTIRELY BY STRING, and attached MANUALLY - never by [HarmonyPatch] attribute.
+    /// TG_ModManagerUI does not exist in the DEMO assembly at all (MOD_MENU is the one value retail
+    /// added to the state enum), so naming the type in an attribute - or in a method signature -
+    /// does not COMPILE against the demo, and the csproj defaults to the demo install.
+    ///
+    /// This cost a build break: the class was first written with typed parameters and attributes,
+    /// which compiled fine against retail because every build passed -p:GameDir explicitly, and
+    /// then failed the moment package.ps1 built with the default GameDir. "Retail is one assembly
+    /// with different scene data" holds 101 times out of 102, and this is the 102nd - the same
+    /// shape as TG_NameKeys.playerNameInput. Build against BOTH before shipping.
     public static class ModMenuPatches
     {
+        /// <summary>
+        /// Attaches every hook this class owns, or none if this build has no mod manager.
+        /// Returns the number attached, so a caller can report demo-vs-retail from the log.
+        /// </summary>
+        internal static int TryAttach(HarmonyLib.Harmony harmony)
+        {
+            try
+            {
+                Type t = AccessTools.TypeByName("TG_ModManagerUI");
+                if (t == null) return 0;   // demo build - expected, not an error.
+
+                int attached = 0;
+                attached += Attach(harmony, t, "Open", nameof(AfterOpen));
+                attached += Attach(harmony, t, "Update", nameof(AfterUpdate));
+                attached += Attach(harmony, t, "Close", nameof(AfterClose));
+                return attached;
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[ModMenu] could not attach: " + e.Message);
+                return 0;
+            }
+        }
+
+        private static int Attach(HarmonyLib.Harmony harmony, Type target, string method, string postfixName)
+        {
+            MethodInfo m = AccessTools.Method(target, method);
+            if (m == null)
+            {
+                MelonLogger.Warning("[ModMenu] target " + target.Name + "." + method + " not found.");
+                return 0;
+            }
+
+            MethodInfo postfix = typeof(ModMenuPatches)
+                .GetMethod(postfixName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (postfix == null) return 0;
+
+            harmony.Patch(m, postfix: new HarmonyMethod(postfix));
+            return 1;
+        }
+
         /// <summary>
         /// Speaks the screen and its state when the mod manager opens.
         ///
@@ -52,9 +102,7 @@ namespace CoffeeTalkAccess.FullGame
         /// ⚠ Read the counts AFTER the base method, never before: on the very first open, Init()
         /// is what populates both lists, so a prefix would report an empty screen every time.
         /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(TG_ModManagerUI), nameof(TG_ModManagerUI.Open))]
-        public static void AfterOpen(TG_ModManagerUI __instance)
+        public static void AfterOpen(object __instance)
         {
             try
             {
@@ -166,7 +214,7 @@ namespace CoffeeTalkAccess.FullGame
         /// re-applied rather than cached because the panels rebuild their graph whenever a mod is
         /// added or removed.
         /// </summary>
-        private static void RepairNavigation(TG_ModManagerUI manager)
+        private static void RepairNavigation(object manager)
         {
             Selectable close = FindIn(manager, "closeButton");
             if (close == null) return;
@@ -207,8 +255,6 @@ namespace CoffeeTalkAccess.FullGame
         private static Selectable _promoPatched;
 
         /// <summary>Restores the promo button's navigation when the screen closes.</summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(TG_ModManagerUI), nameof(TG_ModManagerUI.Close))]
         public static void AfterClose()
         {
             try
@@ -340,9 +386,7 @@ namespace CoffeeTalkAccess.FullGame
         /// EMPTY (`currentActiveModListUI.MaxUILength > 0`, :204). Without that check the screen
         /// would move focus to a panel with nothing in it and strand the player.
         /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(TG_ModManagerUI), "Update")]
-        public static void AfterUpdate(TG_ModManagerUI __instance)
+        public static void AfterUpdate(object __instance)
         {
             try
             {

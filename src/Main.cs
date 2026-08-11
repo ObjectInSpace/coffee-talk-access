@@ -172,6 +172,16 @@ namespace CoffeeTalkAccess
                 else
                     MelonLogger.Msg("[Patch] No retail language picker on this build (demo) - skipped.");
 
+                // The mod manager, attached manually for a STRONGER version of the same reason:
+                // TG_ModManagerUI is absent from the demo assembly entirely, so naming it in an
+                // attribute does not even COMPILE against the demo - and the csproj defaults to the
+                // demo install. See the header of ModMenuPatches.
+                int modHooks = FullGame.ModMenuPatches.TryAttach(harmony);
+                if (modHooks > 0)
+                    MelonLogger.Msg("[Patch] Mod manager hooks attached (" + modHooks + ", full-game build).");
+                else
+                    MelonLogger.Msg("[Patch] No mod manager on this build (demo) - skipped.");
+
                 int patched = 0;
                 foreach (System.Reflection.MethodBase m in harmony.GetPatchedMethods())
                 {

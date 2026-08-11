@@ -21,6 +21,13 @@
 # `Assembly-CSharp` with the same identity, so auditing the second one in a session that already
 # loaded the first fails with "Assembly with same name is already loaded". That is a HOST
 # limitation, not a finding -- do not read it as a broken build.
+# ⚠ THIS TOOL ONLY SEES [HarmonyPatch] ATTRIBUTES. Hooks attached MANUALLY via harmony.Patch()
+# are invisible to it - currently TG_InitLanguageSettingMenu.RefreshLanguageUI and all three
+# TG_ModManagerUI hooks, which must be manual because their targets do not exist in the demo
+# assembly. Expect 65 here, not 68: the missing three are covered at RUNTIME by Main's optional
+# table, which reports each as "live" or "not present on this build". If you are checking whether a
+# manual hook attached, read the LOG, not this script.
+#
 # ⚠ DEFAULTS TO THE NEWEST BUILD, not to a fixed configuration. This script silently audited a
 # STALE bin\Debug DLL after a `dotnet build -c Release`, reporting an unchanged "Resolved: 64
 # FAILED: 0" for a build that had just GAINED a hook. Green, wrong, and indistinguishable from a
