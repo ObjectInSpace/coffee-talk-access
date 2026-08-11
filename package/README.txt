@@ -25,7 +25,14 @@ WHAT IS NEW IN 0.9.0
     offered only on a gamepad. See THE MOD MANAGER below.
 
   - Fixed the cursor getting stuck on the mod manager's "add all" and "remove
-    all" buttons, which shipped with no way to move off them.
+    all" buttons, which shipped with no way to move off them, and on a mod row
+    when only one mod is installed - the game wires the rows into a ring that
+    wraps around to itself with no way out.
+
+  - Enter on a mod now actually turns it on or off, and says which. The game's
+    own keyboard path only played the click sound without doing anything, so
+    there was no way to tell whether a press had worked. A mouse click was
+    unaffected, which is why this was never noticed.
 
 WHAT IS NEW IN 0.8.3
 
@@ -189,7 +196,11 @@ subscriptions appear here.
   [ and ]              Switch between the "all mods" and "active mods" lists.
                        The game only offers this on a gamepad's shoulder
                        buttons, so the mod supplies the bracket keys.
-  Escape               Close the mod manager.
+  Tab                  Close the mod manager, the same key that opened it.
+
+You turn a mod ON from the "all mods" list and OFF from the "active mods"
+list, so pressing Enter twice on the same row will not undo it -- press ] to
+reach the active list, then Enter on the mod there.
 
 If you have no Workshop mods subscribed, the screen says "Mod manager, empty"
 and holds only the close and "add all" buttons. The "add all" and "remove all"

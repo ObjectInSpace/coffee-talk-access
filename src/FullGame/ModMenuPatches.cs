@@ -127,9 +127,9 @@ namespace CoffeeTalkAccess.FullGame
                 // So this states only what the FOCUS LINE CANNOT: which screen this is, and how
                 // many mods are in it. Control names and keys belong to the controls themselves.
                 string spoken = available <= 0
-                    ? "Mod manager, empty."
+                    ? "Mod manager, empty. Tab to close."
                     : "Mod manager, " + available + " mod" + (available == 1 ? "" : "s")
-                      + ", " + active + " active.";
+                      + ", " + active + " active. Tab to close.";
 
                 Speak(spoken);
             }
@@ -229,6 +229,11 @@ namespace CoffeeTalkAccess.FullGame
             LinkUp(add, close);
             LinkUp(remove, close);
 
+            // The mod ROWS wrap into a closed ring with no exit - see LinkRowsToEscape. Done here,
+            // after Init/Refresh have built them, and repeated on every Open because the panels
+            // rebuild their graph whenever the list changes.
+            LinkRowsToEscape(manager, close);
+
             // Take the promo button out of reach WITHOUT deactivating it - the main menu owns that
             // object and will show/hide it on its own schedule. Mode.None leaves it clickable by
             // mouse and visible to sighted players; it simply stops being a navigation target.
@@ -268,6 +273,196 @@ namespace CoffeeTalkAccess.FullGame
             {
                 MelonLogger.Warning("[ModMenu] promo restore threw: " + e.Message);
             }
+        }
+
+        /// <summary>
+        /// Makes Enter actually TOGGLE a mod, and says what happened.
+        ///
+        /// ⚠ THE GAME'S SUBMIT PATH IS BROKEN FOR MOD ROWS. TG_Button.OnSubmit (TG_Button:79) calls
+        /// ButtonOnClickEvent(), whose base implementation does exactly one thing:
+        ///
+        ///     public virtual void ButtonOnClickEvent()
+        ///     {
+        ///         TG_GenericSingelton&lt;TG_AudioManager&gt;.Instance.PlayButtonClickSFX();
+        ///     }
+        ///
+        /// It plays the click SFX and never invokes button.onClick. TG_ModListItemUI overrides
+        /// MouseHoverEvent and MouseUnHoverEvent but NOT ButtonOnClickEvent, so pressing Enter on a
+        /// mod makes a click sound and changes nothing. Reported live as "I pressed enter and heard
+        /// a click but nothing else seemed to happen so I couldn't tell if it was enabled or
+        /// disabled" - the sound is the game lying about having acted.
+        ///
+        /// A MOUSE click works, because IPointerClickHandler routes through Unity's own Button,
+        /// which invokes onClick separately. So this is keyboard/gamepad-only, and invisible to
+        /// anyone testing with a mouse.
+        ///
+        /// We invoke onClick ourselves. Deliberately NOT by patching ButtonOnClickEvent: that is a
+        /// shared virtual on the base TG_Button, so a postfix there would fire for every button in
+        /// the game that does not override it, double-activating screens that work correctly today.
+        /// Scoped to the mod rows, which are the controls that are actually broken.
+        /// </summary>
+        private static void ToggleFocusedMod()
+        {
+            EventSystem es = EventSystem.current;
+            GameObject go = es == null ? null : es.currentSelectedGameObject;
+            if (go == null) return;
+
+            Type itemType = AccessTools.TypeByName("TG_ModListItemUI");
+            if (itemType == null) return;
+
+            Component item = go.GetComponent(itemType) ?? go.GetComponentInParent(itemType);
+            if (item == null) return;   // not a mod row - leave the game's own handling alone.
+
+            string label = ReadModEntryLabel(go) ?? go.name;
+
+            // The mod's NAME is the identity that survives the click. The row object cannot be:
+            // clicking a row in the "all mods" list does not move it, it CREATES a second row in
+            // the active list (AddModToCurrentActiveModList), and clicking an active row DESTROYS
+            // that row (RemoveModListUI -> Object.Destroy). So state must be keyed on the name.
+            string modName = ReadModName(go);
+
+            var button = AccessTools.Property(itemType, "Button")?.GetValue(item, null) as Button;
+            if (button == null) return;
+
+            // ⚠ MEASURE AFTER, DO NOT PREDICT. The first version read "which panel is this row in"
+            // BEFORE the click and reported the opposite - and it said "enabled" every time,
+            // because the row under the cursor is an ALL-MODS row whether or not the mod is active.
+            // It never moves, so its panel says nothing about the mod's state. Reading the active
+            // list after the click reports what actually happened, and cannot drift from it.
+            bool activeAfter = IsModActive(modName);
+            button.onClick.Invoke();
+            bool nowActive = IsModActive(modName);
+
+            // Say what the press DID, which is the whole point - the click SFX is identical whether
+            // the mod was enabled or disabled, so by ear the two are indistinguishable.
+            if (nowActive != activeAfter)
+            {
+                Speak(label + (nowActive ? ", enabled" : ", disabled"));
+            }
+            else
+            {
+                // The click was refused. RemoveModFromCurrentActiveModList no-ops unless the panel
+                // is in ModUIState.Normal (mid-reorder, for one), and saying "enabled" there would
+                // be a plain lie. Report the unchanged state instead of inventing a transition.
+                Speak(label + (nowActive ? ", still enabled" : ", still disabled"));
+            }
+        }
+
+        /// <summary>
+        /// Reads a row's mod NAME - the key the active list is indexed by.
+        /// </summary>
+        private static string ReadModName(GameObject go)
+        {
+            try
+            {
+                Type itemType = AccessTools.TypeByName("TG_ModListItemUI");
+                if (itemType == null) return null;
+
+                Component item = go.GetComponent(itemType) ?? go.GetComponentInParent(itemType);
+                if (item == null) return null;
+
+                object modData = AccessTools.Property(itemType, "ModData")?.GetValue(item, null);
+                if (modData == null) return null;
+
+                return AccessTools.Property(modData.GetType(), "Modname")?.GetValue(modData, null)?.ToString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// True when a mod is in the ACTIVE list, by name.
+        ///
+        /// ⚠ Reads the active PANEL's `ModListItemUIs` dictionary, which is keyed by Modname
+        /// (TG_ModContentListPanelUI:83-92) and is what add/remove actually mutate - so it moves in
+        /// lockstep with the click. Deliberately NOT the row's parent transform: my first attempt
+        /// asked "is this row inside the active panel?", and since the focused row is ALWAYS an
+        /// all-mods row - clicking it creates a SECOND row elsewhere rather than moving it - the
+        /// answer was always false and the mod always announced "enabled".
+        ///
+        /// ⚠ Also not the row's own transform parent for a second reason: rows are instantiated
+        /// under `parentContentPanel` (:85), a separate Transform field, not under the panel
+        /// component's own transform. An IsChildOf against the panel could be false even for a row
+        /// that genuinely is in the active list.
+        /// </summary>
+        private static bool IsModActive(string modName)
+        {
+            if (string.IsNullOrEmpty(modName)) return false;
+
+            try
+            {
+                object mgr = ResolveModManager();
+                if (mgr == null) return false;
+
+                object activePanel = AccessTools.Field(mgr.GetType(), "currentActiveModListUI")?.GetValue(mgr);
+                if (activePanel == null) return false;
+
+                var dict = AccessTools.Property(activePanel.GetType(), "ModListItemUIs")
+                    ?.GetValue(activePanel, null) as System.Collections.IDictionary;
+                if (dict == null) return false;
+
+                return dict.Contains(modName);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[ModMenu] active-state read threw: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>Finds the live mod manager, by string because the type is retail-only.</summary>
+        private static object ResolveModManager()
+        {
+            Type t = AccessTools.TypeByName("TG_ModManagerUI");
+            if (t == null) return null;
+            return UnityEngine.Object.FindObjectOfType(t);
+        }
+
+        /// <summary>
+        /// Gives the mod ROWS a way out of their own list.
+        ///
+        /// ⚠ SetNavigation (TG_ModContentListPanelUI:221-250) wires every row's up/down to its
+        /// neighbours and WRAPS at both ends - so the rows form a closed ring with no exit. With a
+        /// single mod installed that ring is one element pointing at ITSELF, which is why the player
+        /// reported "it was the only thing that got focus; the add and remove mod buttons no longer
+        /// got focus": the row was not stuck by accident, the graph genuinely had nowhere else to
+        /// go. The empty-list case hid this completely, because there were no rows to trap anyone.
+        ///
+        /// Left/right are free on every row (SetNavigation sets only up/down), so pointing them at
+        /// the close button adds an exit WITHOUT touching the game's up/down ordering - a player
+        /// arrowing through mods still moves through mods in the authored order.
+        /// </summary>
+        private static void LinkRowsToEscape(object manager, Selectable escape)
+        {
+            if (escape == null) return;
+
+            Type itemType = AccessTools.TypeByName("TG_ModListItemUI");
+            if (itemType == null) return;
+
+            UnityEngine.Object[] rows = UnityEngine.Object.FindObjectsOfType(itemType);
+            int wired = 0;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var row = rows[i] as MonoBehaviour;
+                if (row == null || !row.gameObject.activeInHierarchy) continue;
+
+                var button = AccessTools.Property(itemType, "Button")?.GetValue(row, null) as Button;
+                if (button == null) continue;
+
+                Navigation nav = button.navigation;
+                if (nav.mode != Navigation.Mode.Explicit) continue;
+                if (nav.selectOnLeft != null || nav.selectOnRight != null) continue;
+
+                nav.selectOnLeft = escape;
+                nav.selectOnRight = escape;
+                button.navigation = nav;
+                wired++;
+            }
+
+            if (wired > 0)
+                MelonLogger.Msg("[ModMenu] gave " + wired + " mod row(s) a left/right exit to the close button.");
         }
 
         /// <summary>Points a dead-end button's up/down at a control that leads somewhere.</summary>
@@ -392,9 +587,31 @@ namespace CoffeeTalkAccess.FullGame
             {
                 if (__instance == null) return;
 
+                // Tab CLOSES the mod manager, mirroring Tab opening it from the main menu and Tab
+                // toggling the phone in the cafe - the same key gets you out of the thing it got
+                // you into. Reported live: "it's still pretty tough to exit the mod manager",
+                // because the close button is one control among several and Escape is not wired
+                // here by the game.
+                //
+                // ⚠ NO CONFLICT WITH THE OPENER, and the reason is the state gate, not the key.
+                // MainMenuHotkeys reads Tab only in MAIN_MENU; this reads it only in MOD_MENU. One
+                // press can therefore only ever match one of them. ⚠ If either gate is ever relaxed
+                // they WILL fight, and the symptom would be a menu that reopens the instant it
+                // closes - check the states before touching either.
+                bool wantClose = Input.GetKeyDown(KeyCode.Tab);
+
                 bool wantPrev = Input.GetKeyDown(KeyCode.LeftBracket);
                 bool wantNext = Input.GetKeyDown(KeyCode.RightBracket);
-                if (!wantPrev && !wantNext) return;
+
+                // Enter/Space, because the game's own submit path is broken on mod rows - see
+                // ToggleFocusedMod. Read here rather than bound onto an action so it can be scoped
+                // to this screen and to mod rows specifically; ToggleFocusedMod itself no-ops on
+                // anything that is not a mod row, so the close button keeps the game's handling.
+                bool wantToggle = Input.GetKeyDown(KeyCode.Return)
+                               || Input.GetKeyDown(KeyCode.KeypadEnter)
+                               || Input.GetKeyDown(KeyCode.Space);
+
+                if (!wantPrev && !wantNext && !wantToggle && !wantClose) return;
 
                 // Only while the screen is actually interactive. Update() keeps running through the
                 // open/close fades, when currentState is TWEENING and the lists are mid-rebuild.
@@ -404,6 +621,28 @@ namespace CoffeeTalkAccess.FullGame
                 if (mgr == null) return;
                 object state = AccessTools.Field(mgr.GetType(), "currentState")?.GetValue(mgr);
                 if (state == null || state.ToString() != "MOD_MENU") return;
+
+                if (wantClose)
+                {
+                    // Through the game's own closeButton.onClick, which is wired to Close() - so
+                    // LoadCurrentActiveMod still runs and the mod list is still SAVED. Calling
+                    // Close() directly would work too, but going through the button means anything
+                    // else the game later attaches to that click keeps happening.
+                    Selectable close = FindIn(__instance, "closeButton");
+                    Button closeButton = close as Button;
+                    if (closeButton != null)
+                    {
+                        MelonLogger.Msg("[ModMenu] Tab -> close");
+                        closeButton.onClick.Invoke();
+                    }
+                    return;
+                }
+
+                if (wantToggle)
+                {
+                    ToggleFocusedMod();
+                    return;
+                }
 
                 object allPanel = AccessTools.Field(__instance.GetType(), "allModListUI")?.GetValue(__instance);
                 object activePanel = AccessTools.Field(__instance.GetType(), "currentActiveModListUI")?.GetValue(__instance);
@@ -420,11 +659,11 @@ namespace CoffeeTalkAccess.FullGame
 
                 // Blur the panel we are leaving and clear the one we are entering, exactly as
                 // ControllerHandle does, so the visuals match the focus for sighted players too.
-                Invoke(wantNext ? allPanel : activePanel, "SetBlurImage", null);
-                Invoke(target, "ClearBlurImage", null);
+                Invoke(wantNext ? allPanel : activePanel, "SetBlurImage");
+                Invoke(target, "ClearBlurImage");
 
                 AccessTools.Field(__instance.GetType(), "lastUITabActive")?.SetValue(__instance, target);
-                Invoke(target, "SetFirstSelectedButton", null);
+                Invoke(target, "SetFirstSelectedButton");
 
                 Speak(wantNext ? "Active mods." : "All mods.");
             }
@@ -434,15 +673,35 @@ namespace CoffeeTalkAccess.FullGame
             }
         }
 
-        private static void Invoke(object target, string method, object[] args)
+        /// <summary>
+        /// Calls a no-argument-in-practice method by name.
+        ///
+        /// ⚠ SUPPLIES Type.Missing FOR OPTIONAL PARAMETERS. Reflection does NOT apply C# default
+        /// values: TG_ModContentListPanelUI.SetBlurImage takes
+        /// `TG_ModListItemUI exceptionUI = null`, so invoking it with a null argument array threw
+        /// "Number of parameters specified does not match the expected number" - every single time
+        /// the player pressed a bracket key. The whole tab switch was dead and said nothing,
+        /// because the throw was caught and logged as a warning rather than spoken.
+        ///
+        /// Building the argument array from the method's own parameter list means this cannot drift
+        /// if a signature gains or loses an optional argument.
+        /// </summary>
+        private static void Invoke(object target, string method)
         {
             if (target == null) return;
+
             MethodInfo m = AccessTools.Method(target.GetType(), method);
             if (m == null)
             {
                 MelonLogger.Warning("[ModMenu] method '" + method + "' not found.");
                 return;
             }
+
+            ParameterInfo[] ps = m.GetParameters();
+            object[] args = ps.Length == 0 ? null : new object[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+                args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : Type.Missing;
+
             m.Invoke(target, args);
         }
 
