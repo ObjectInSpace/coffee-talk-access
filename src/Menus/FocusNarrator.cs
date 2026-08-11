@@ -604,6 +604,19 @@ namespace CoffeeTalkAccess.Menus
                 string profileLabel = GetProfileSlotLabel(go);
                 if (!string.IsNullOrEmpty(profileLabel)) return profileLabel;
 
+                // Mod manager entries. Checked BEFORE the generic scan for the same reason as the
+                // song rows above, only worse: a TG_ModListItemUI carries THREE sibling Texts (name,
+                // description, comma-joined tags), so GetComponentInChildren<Text>() returns
+                // whichever Unity ordered first - the entry could announce its description or its
+                // tag list instead of its name. Read from ModData instead of guessing.
+                string modLabel = FullGame.ModMenuPatches.ReadModEntryLabel(go);
+                if (!string.IsNullOrEmpty(modLabel)) return modLabel;
+
+                // The mod manager's close button is an ICON with no Text anywhere, so it announced
+                // as "Close Mod Button, unlabeled" - the first thing heard on entering the screen.
+                if (go.name == FullGame.ModMenuPatches.CloseButtonName)
+                    return FullGame.ModMenuPatches.CloseButtonLabel;
+
                 MonoBehaviour[] comps = go.GetComponents<MonoBehaviour>();
                 for (int i = 0; i < comps.Length; i++)
                 {

@@ -21,11 +21,24 @@
 # `Assembly-CSharp` with the same identity, so auditing the second one in a session that already
 # loaded the first fails with "Assembly with same name is already loaded". That is a HOST
 # limitation, not a finding -- do not read it as a broken build.
+# ⚠ DEFAULTS TO THE NEWEST BUILD, not to a fixed configuration. This script silently audited a
+# STALE bin\Debug DLL after a `dotnet build -c Release`, reporting an unchanged "Resolved: 64
+# FAILED: 0" for a build that had just GAINED a hook. Green, wrong, and indistinguishable from a
+# correct run - the newly added patch was simply absent from the listing. Picking whichever DLL is
+# newer means the tool audits what was actually just built; pass -ModDll to override.
 param(
   [string]$GameDir = "D:\SteamLibrary\steamapps\Common\Coffee Talk",
-  [string]$ModDll  = "C:\Users\amock\Coffee Talk Access\bin\Debug\CoffeeTalkAccess.dll"
+  [string]$ModDll
 )
 $ErrorActionPreference='Stop'
+if(-not $ModDll){
+  $candidates = @(
+    "C:\Users\amock\Coffee Talk Access\bin\Release\CoffeeTalkAccess.dll",
+    "C:\Users\amock\Coffee Talk Access\bin\Debug\CoffeeTalkAccess.dll"
+  ) | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending
+  if(-not $candidates){ throw "No built CoffeeTalkAccess.dll found in bin\Release or bin\Debug." }
+  $ModDll = $candidates[0]
+}
 $managed = Join-Path $GameDir 'CoffeeTalk_Data\Managed'
 # MelonLoader may not be installed in the game being audited (a fresh retail install has none), so
 # fall back to any sibling install that does have it. It is only needed to satisfy the mod's

@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.8.3
+Version 0.8.4
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -9,6 +9,23 @@ navigation to menus that the game only lets you drive with a gamepad.
 
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
+
+WHAT IS NEW IN 0.8.4
+
+  - The exit and mod manager buttons are reachable. The main menu has three
+    buttons that sit outside the list the cursor walks - exit, mods, and a
+    Steam promotion - so no amount of arrowing could ever land on them. The
+    game offers them as gamepad shortcuts advertised by on-screen prompts,
+    which is no help by ear. Escape now offers to quit from the main menu,
+    and Tab opens the mod manager.
+
+  - The mod manager is readable. It announces itself and how many mods you
+    have, labels its close button, and adds the bracket keys for switching
+    between the "all mods" and "active mods" lists - something the game
+    offered only on a gamepad. See THE MOD MANAGER below.
+
+  - Fixed the cursor getting stuck on the mod manager's "add all" and "remove
+    all" buttons, which shipped with no way to move off them.
 
 WHAT IS NEW IN 0.8.3
 
@@ -130,7 +147,13 @@ KEYS THE MOD ADDS
   Arrow keys or WASD   Move through menus. The game by itself only reads these
                        from a gamepad, so the mod supplies them.
   Enter                Activate the selected menu item.
-  Escape               Back out, and answer "no" to a yes/no popup.
+  Escape               Back out, and answer "no" to a yes/no popup. On the main
+                       menu there is nothing to back out to, so Escape offers to
+                       quit the game. It asks first, and the answer starts on
+                       "no", so a mistaken press costs you one keypress.
+  Tab                  On the main menu, open the mod manager. This matches Tab
+                       opening the phone during the game. In the cafe Tab is
+                       still the phone.
   Backquote  ( ` )     Repeat the last thing that was spoken. This is the key
                        to the left of the 1 key, above Tab.
   F8                   Speech test. Speaks a test line so you can check the
@@ -153,6 +176,33 @@ The full game opens on a row of three save profiles before the main menu.
 Deleting a profile is the gamepad X button only; the game has no key for it.
 Note that Enter means "open this card" on the row and "load" once a card is
 open, because the card has two sides. The mod says which side you are on.
+
+
+THE MOD MANAGER (FULL GAME)
+
+Press Tab on the main menu. This is the Steam Workshop mod manager, and it is
+separate from mods like this one that you install by hand -- only Workshop
+subscriptions appear here.
+
+  Up and down          Move through the mod list.
+  Enter                Turn a mod on or off.
+  [ and ]              Switch between the "all mods" and "active mods" lists.
+                       The game only offers this on a gamepad's shoulder
+                       buttons, so the mod supplies the bracket keys.
+  Escape               Close the mod manager.
+
+If you have no Workshop mods subscribed, the screen says "Mod manager, empty"
+and holds only the close and "add all" buttons. The "add all" and "remove all"
+buttons make a click sound and do nothing when the list is empty; that is the
+game's own behaviour and not a fault in the mod.
+
+Two notes about this screen, both worked around rather than fixed at source,
+because the problems are in the game's data rather than its code. The "add all"
+and "remove all" buttons ship with no way to move off them, which trapped the
+cursor; the mod points them back at the close button. And a Steam promotion
+button belonging to the main menu underneath is close enough on screen that the
+cursor could wander onto it; the mod takes it out of the running while the mod
+manager is open, and puts it back afterwards.
 
 
 THE SMARTPHONE (FULL GAME)

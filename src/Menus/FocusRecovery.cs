@@ -55,8 +55,18 @@ namespace CoffeeTalkAccess.Menus
         /// </summary>
         private const float SettleSeconds = 0.35f;
 
+        /// <summary>
+        /// How long a recovered selection must SURVIVE before the one-per-screen guard is released.
+        /// Comfortably longer than the frame or two a fight lasts, and far shorter than any real
+        /// visit to a screen, so a player who genuinely leaves and returns is still recovered.
+        /// </summary>
+        private const float HoldSeconds = 1.0f;
+
         private static float _nullSince = -1f;
         private static string _lastRecoveredState;
+
+        /// <summary>When the current recovered selection first became healthy. -1 = not timing.</summary>
+        private static float _recoveredAt = -1f;
 
         /// <summary>
         /// The control the player was last genuinely on, so a recovery can put them BACK rather than
@@ -212,8 +222,28 @@ namespace CoffeeTalkAccess.Menus
                     // focus on this same screen is treated as new. Without clearing this, a screen
                     // the player leaves and returns to would be recovered once and then never
                     // again - the "uncleared dedup turns a duplicate into permanent silence" trap.
+                    //
+                    // ⚠ BUT ONLY ONCE THE SELECTION HAS HELD. Clearing the guard the instant focus
+                    // is non-null makes "one recovery per screen" mean "one recovery per FRAME"
+                    // whenever our own selection does not stick: recover -> valid for a frame ->
+                    // guard cleared -> lost again -> recover. That is not hypothetical - it ran
+                    // seven times in a row on the mod menu's dead-end AddAllModButton and the player
+                    // reported the screen as "focusing nothing".
+                    //
+                    // Requiring the selection to survive HoldSeconds distinguishes a real recovery
+                    // (focus lands and stays) from a fight (focus lands and is torn away). The root
+                    // cause there was unwired scene data, fixed in ModMenuPatches - this is the
+                    // backstop that keeps ANY such screen from becoming a loop.
                     _nullSince = -1f;
-                    _lastRecoveredState = null;
+                    if (_lastRecoveredState != null)
+                    {
+                        if (_recoveredAt < 0f) _recoveredAt = Time.realtimeSinceStartup;
+                        if (Time.realtimeSinceStartup - _recoveredAt >= HoldSeconds)
+                        {
+                            _lastRecoveredState = null;
+                            _recoveredAt = -1f;
+                        }
+                    }
                     return;
                 }
 

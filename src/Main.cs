@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.8.3", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.8.4", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -217,6 +217,8 @@ namespace CoffeeTalkAccess
                 // private), which is the failure mode this list exists to catch: a rename would
                 // leave the arrow keys dead on every screen with an otherwise clean log. It is also
                 // the hook whose HOST was wrong once - see KeyboardNav.AfterControllerUpdate.
+                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit). Both hooks share
+                // this target deliberately; ReportDoublePatches exempts it by name.
                 { "TG_ControllerInputManager", "ControllerUpdateFunction" },
                 { "Fungus.SayDialog", "Say" },
                 { "Fungus.SayDialog", "SetCharacterName" },
@@ -318,6 +320,16 @@ namespace CoffeeTalkAccess
                 // Retail's language picker is a spinner with no per-language Selectable; the demo's
                 // is a grid of flag buttons. RefreshLanguageUI exists only in the full game.
                 { "TG_InitLanguageSettingMenu", "RefreshLanguageUI" },
+                // The Steam Workshop mod manager. TG_ModManagerUI does not exist in the demo
+                // assembly at all - MOD_MENU is the single value retail ADDED to the state enum -
+                // so absence here is a build difference, not a fault. Open() announces the screen
+                // and its mod counts; Update() carries the keyboard tab switch.
+                { "TG_ModManagerUI", "Open" },
+                { "TG_ModManagerUI", "Update" },
+                // Close restores the promo button's navigation. Listed because a miss here would
+                // leave a main-menu control permanently un-navigable for the rest of the session -
+                // the mod having broken a screen it does not own, silently.
+                { "TG_ModManagerUI", "Close" },
             };
 
             int missing = 0;
@@ -406,6 +418,17 @@ namespace CoffeeTalkAccess
                 // state, exempt it HERE and say why, rather than dropping the check or letting it
                 // cry wolf - a diagnostic the player learns to ignore is worse than none.
                 if (m.DeclaringType?.Name == "TG_DrinkManager" && m.Name == "AddIngredient") continue;
+
+                // TG_ControllerInputManager.ControllerUpdateFunction is the mod's per-frame input
+                // host and carries two deliberate postfixes: KeyboardNav.AfterControllerUpdate
+                // (pumps the directional routers) and MainMenuHotkeys.AfterControllerUpdate (reads
+                // Tab/Escape on the main menu). Both are hosted here for the same load-bearing
+                // reason - it runs unconditionally from Update() in BOTH input modes, whereas
+                // HandlerKeyboard runs only in KEYBOARD mode, which a connected pad can suppress
+                // indefinitely. Neither speaks on the frames the other acts: KeyboardNav narrates
+                // nothing itself, and the hotkeys act only on a GetKeyDown edge in MAIN_MENU.
+                if (m.DeclaringType?.Name == "TG_ControllerInputManager"
+                    && m.Name == "ControllerUpdateFunction") continue;
 
                 doubled++;
                 MelonLogger.Error("[Patch] DOUBLE-PATCHED (" + ours + "x): "
@@ -521,6 +544,33 @@ namespace CoffeeTalkAccess
         /// focused object carries no readable text - and they need opposite fixes. Guessing
         /// between them costs a live run each time, so we ask the game instead.
         /// </summary>
+        /// <summary>Names a navigation target, distinguishing "no target" from an unnamed object.</summary>
+        private static string NameOf(Selectable s)
+        {
+            return s == null ? "-" : s.gameObject.name;
+        }
+
+        /// <summary>
+        /// The object's ancestry, root first, so the log shows which SCREEN owns a control rather
+        /// than just what it is called. Capped at four levels - enough to name the owning canvas
+        /// without turning every dump line into a paragraph.
+        /// </summary>
+        private static string PathOf(GameObject go)
+        {
+            if (go == null) return "?";
+
+            string path = go.name;
+            Transform t = go.transform.parent;
+            int depth = 0;
+            while (t != null && depth < 4)
+            {
+                path = t.name + "/" + path;
+                t = t.parent;
+                depth++;
+            }
+            return path;
+        }
+
         private static void DumpUiState()
         {
             try
@@ -546,7 +596,33 @@ namespace CoffeeTalkAccess
                 {
                     Selectable s = all[i];
                     if (s == null || !s.gameObject.activeInHierarchy || !s.interactable) continue;
-                    MelonLogger.Msg("[Dump]   selectable: " + s.gameObject.name + " (" + s.GetType().Name + ")");
+
+                    // ⚠ REPORT THE NAVIGATION GRAPH, not just the control's existence.
+                    //
+                    // "Arrow keys do nothing" and "there is nowhere to go" look identical in a list
+                    // of names. Navigation.Mode.None means the EventSystem will never move off this
+                    // control no matter what is on screen; Explicit with all-null targets means the
+                    // graph exists but is a dead end. Those are different bugs with different fixes,
+                    // and without the mode + targets printed here the log cannot tell them apart -
+                    // which is what turned a mod-menu report into a second round of guessing.
+                    string nav = s.navigation.mode.ToString();
+                    if (s.navigation.mode == Navigation.Mode.Explicit)
+                    {
+                        nav += " up=" + NameOf(s.navigation.selectOnUp)
+                             + " down=" + NameOf(s.navigation.selectOnDown)
+                             + " left=" + NameOf(s.navigation.selectOnLeft)
+                             + " right=" + NameOf(s.navigation.selectOnRight);
+                    }
+
+                    // ⚠ PRINT WHERE THE CONTROL LIVES, not just its name.
+                    //
+                    // A flat list of names cannot distinguish "the screen owns this control" from
+                    // "this belongs to the screen underneath and is leaking focus". I asserted the
+                    // second about the mod menu from exactly such a list, and the player correctly
+                    // objected that only TWO of the supposed leaks were ever reachable. The parent
+                    // chain is what settles it, and it costs one line.
+                    MelonLogger.Msg("[Dump]   selectable: " + PathOf(s.gameObject)
+                        + " (" + s.GetType().Name + ") nav=" + nav);
                     if (++shown >= 40) { MelonLogger.Msg("[Dump]   ...truncated"); break; }
                 }
                 MelonLogger.Msg("[Dump] " + shown + " interactable selectable(s) active.");
