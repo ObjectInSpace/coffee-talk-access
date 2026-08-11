@@ -41,10 +41,13 @@ namespace CoffeeTalkAccess.FullGame
     ///    IN_DIALOGUE, on InGameScene/InGameDemoScene vs EndlessModeScene (a different manager owns
     ///    the phone in endless mode), and on comicPanelActive. Copying that would be a second copy
     ///    of the game's rules, free to drift. We invoke the game's method and inherit all of it.
-    ///  - We do not check canOpenSmartPhone here. OpenSmartPhone guards itself (:228) and the story
-    ///    can block the phone per-scene via TG_ToggleBlockSmartPhoneCommand; a refusal is the
-    ///    game's intent, not a fault. SmartPhonePatches already SAYS "Smartphone unavailable right
-    ///    now" on the blocked branch, so the player hears a reason rather than silence.
+    ///  - We do not check canOpenSmartPhone here, and more generally we do not decide in advance
+    ///    whether the phone may open. OpenSmartPhone guards itself (:228) on four conditions, three
+    ///    of them transient, and the story can also block the phone per-scene via
+    ///    TG_ToggleBlockSmartPhoneCommand; a refusal is the game's intent, not a fault. We call and
+    ///    then MEASURE, rather than reimplementing the matrix - 0.9.2 predicted it and shipped a
+    ///    key that worked exactly once per brew. SmartPhonePatches already SAYS "Smartphone
+    ///    unavailable right now" on the blocked branch, so the player hears a reason, not silence.
     ///  - We do not announce or move focus. OpenSmartPhone only STARTS a 0.6s tween; the screen is
     ///    not live until its OnComplete. PhoneEntryWatcher already owns the announcement and the
     ///    keyboard selection, for reasons written up in SmartPhonePatches - announcing here would
@@ -97,30 +100,30 @@ namespace CoffeeTalkAccess.FullGame
                     ?.GetValue(__instance);
                 string s = state != null ? state.ToString() : null;
 
-                // ⚠ VIEWING_GLASS IS THE SERVE-OPTIONS STEP OF MAKING A DRINK, and the phone is
-                // refused there by the GAME, not by us: OpenSmartPhone's first guard (:228) returns
-                // immediately on VIEWING_GLASS, before canOpenSmartPhone is even consulted.
-                // TG_GameManager.ServeOptionsBrewModeState (:378) is what puts you in it.
+                // ⚠ VIEWING_GLASS IS THE SERVE-OPTIONS STEP OF MAKING A DRINK, and reaching it is
+                // NOT rare - it is where you land after closing the phone mid-brew. OpenSmartPhone
+                // saves the state it was opened from (:234) and CloseSmartPhone hands it back via
+                // ChangeToPreviousState (TG_GameManager:463), so once the drink flow has advanced
+                // into serve options, EVERY later press arrives here rather than in BREWING.
                 //
-                // Reported live 2026-08-11 as "it doesn't take focus when I am in the options for
-                // making a drink". The state gate below would skip this screen in silence, which is
-                // indistinguishable from the dead key we just fixed - the player cannot tell "the
-                // mod is broken" from "the game says no while you are holding a glass". We do NOT
-                // force the phone open here: the refusal is deliberate (you are mid-serve), and
-                // overriding a state rule to plant a cursor the game does not expect is the
-                // disagreeing-cursor trap. Say why instead. See [[coffee-talk-unlabeled-controls]].
-                if (s == "VIEWING_GLASS")
-                {
-                    MelonLogger.Msg("[Hotkey] Tab on VIEWING_GLASS - phone refused by game");
-                    Speak("Smartphone unavailable while serving. Finish or cancel the drink first.");
-                    return;
-                }
+                // ⚠ DO NOT SPEAK A REFUSAL FROM THIS BRANCH ON THE WAY IN. 0.9.2 did, and it turned
+                // a working key into a permanently stuck one: reported live as "it only fixes it the
+                // first time - if I close the phone and re-open it the focus goes back to the drink
+                // options". The message was correct about the state and wrong about the situation,
+                // and being CONFIDENTLY wrong is worse than silence, because it tells the player to
+                // stop pressing.
+                //
+                // The deeper mistake was predicting the game's answer instead of measuring it.
+                // OpenSmartPhone (:228) refuses on FOUR conditions - TWEENING, VIEWING_GLASS,
+                // !ingameButtonInteractable and isTweening - and three of those are transient. Any
+                // copy of that matrix here is a second set of rules free to drift from the first.
+                // So we no longer decide: we call the game's handler and then look at whether the
+                // phone actually opened. See [[measure-dont-predict]].
 
-                // Gate on the same two states SmartPhoneToggle acts in. The handler re-checks these
-                // itself, so this is not what makes the call safe - it is what keeps the LOG line
-                // honest, and what keeps us off MAIN_MENU and MOD_MENU where Tab means something
-                // else entirely.
-                if (s != "BREWING" && s != "IN_DIALOGUE") return;
+                // Gate on the states SmartPhoneToggle acts in, PLUS VIEWING_GLASS, which we now let
+                // through to the call so the game itself can accept or refuse it. This keeps us off
+                // MAIN_MENU and MOD_MENU, where Tab means something else entirely.
+                if (s != "BREWING" && s != "IN_DIALOGUE" && s != "VIEWING_GLASS") return;
 
                 // The game's own handler, with the game's own scene and comic-panel branches.
                 object hotkeys = AccessTools.Field(__instance.GetType(), "keyboardHotkeyManager")
@@ -129,6 +132,24 @@ namespace CoffeeTalkAccess.FullGame
 
                 MelonLogger.Msg("[Hotkey] Tab -> smartphone (" + s + ")");
                 AccessTools.Method(hotkeys.GetType(), "SmartPhoneToggle")?.Invoke(hotkeys, null);
+
+                // MEASURE THE RESULT. OpenSmartPhone changes state to TWEENING before starting its
+                // 0.6s tween, so a state that MOVED means the open was accepted; a state still
+                // sitting where it was means one of the four guards refused. Read it after the
+                // call, never before - a proxy read on the way in reported "fine" every time.
+                //
+                // We only speak on the refusal, and only from VIEWING_GLASS, where the player is
+                // holding a glass and has a reason to hear one. PhoneEntryWatcher still owns the
+                // announcement for the accepted case; saying anything here would describe a screen
+                // that is still 0.6s from existing.
+                object after = AccessTools.Field(__instance.GetType(), "currentState")
+                    ?.GetValue(__instance);
+                string t = after != null ? after.ToString() : null;
+                if (t == s && s == "VIEWING_GLASS")
+                {
+                    MelonLogger.Msg("[Hotkey] phone refused by game, still " + t);
+                    Speak("Smartphone unavailable while serving. Finish or cancel the drink first.");
+                }
             }
             catch (Exception e)
             {
