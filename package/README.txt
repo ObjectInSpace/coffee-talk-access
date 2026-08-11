@@ -10,7 +10,25 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.1
+WHAT IS NEW IN 0.9.2
+
+  - The smartphone takes focus when it opens. Tab opened the phone correctly
+    before this, and it announced itself, but the cursor stayed on the screen
+    underneath: the arrow keys were still moving the brewing ingredients while
+    the phone was up and reading. Pressing an arrow appeared to do nothing, or
+    worse, quietly changed what was in the glass. The phone now takes the
+    cursor when it opens, on the home screen and in all four apps.
+
+  - The ingredients take focus again when the brewing screen opens. This
+    broke in 0.9.1 when entering the brew pad from the phone, because the
+    phone's own buttons were still holding the cursor.
+
+    Both of these were the same underlying mistake: when one screen opens on
+    top of another, the mod treated the old screen's cursor as a sign that
+    focus was already healthy, so it left it where it was.
+
+
+WHAT WAS NEW IN 0.9.1
 
   - The brewing screen works with the keyboard. Arrow keys move between the
     ingredients and Enter picks one. Before this, nothing on that screen ever
