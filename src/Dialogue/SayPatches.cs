@@ -75,6 +75,12 @@ namespace CoffeeTalkAccess.Dialogue
                 ISpeechOutput speech = AccessMod.Speech;
                 if (speech == null || !speech.IsAvailable) return;
 
+                // The player's "~" gate. Checked BEFORE the dedup below is updated, on purpose:
+                // _lastSpoken must keep describing what was last SPOKEN, not what was last seen.
+                // Were it updated while muted, the line on screen when narration is switched back
+                // on would be treated as already-said and stay silent.
+                if (!DialogueToggle.Enabled) return;
+
                 string spoken = FungusText.ExtractWords(raw);
                 if (spoken.Length == 0) return;
                 if (spoken == _lastSpoken) return;

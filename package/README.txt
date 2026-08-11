@@ -163,7 +163,16 @@ KEYS THE MOD ADDS
                        still the phone.
   Backquote  ( ` )     Repeat the last thing that was spoken. This is the key
                        to the left of the 1 key, above Tab.
-  F8                   Speech test. Speaks a test line so you can check the
+  Tilde  ( ~ )         The SAME key with shift held. Turns the reading of the
+                       in-game conversation on and off, and says which it just
+                       switched to. Use it if you already know the story, or
+                       want to listen to the game's own audio undisturbed.
+                       Everything else keeps speaking either way: menus, brewing,
+                       the chat log, and the opening cutscene. The cutscene is
+                       left alone on purpose, because its lines disappear on a
+                       timer and there is no way to go back for them. The repeat
+                       key above also still works while reading is off.
+  F8                 Speech test. Speaks a test line so you can check the
                        speech channel is alive.
   F9                   On the brewing screen, speak the current drink's stats.
   F10                  Dump the current interface state into the log. This is

@@ -99,6 +99,12 @@ namespace CoffeeTalkAccess.Dialogue
                     ?.GetValue(manager) as string;
 
                 if (string.IsNullOrEmpty(text)) return;
+
+                // NOT gated by the "~" toggle, deliberately. The opening cutscene is a timed
+                // sequence: its lines appear and then vanish on their own, so a muted cutscene is
+                // content the player cannot get back by any other route. The toggle covers the
+                // in-game Say lines only - those the player advances, and can re-read from the
+                // chat log.
                 Speak(text, source, TextType.Dialogue);
             }
             catch (Exception e)

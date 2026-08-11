@@ -65,6 +65,20 @@ namespace CoffeeTalkAccess
         private const KeyCode RepeatKey = KeyCode.BackQuote;
         private const KeyCode DumpKey = KeyCode.F10;
 
+        // Shift+Backquote ("~") = toggle automatic story narration on/off. See DialogueToggle.
+        //
+        // ⚠ THE TWO SHARE ONE PHYSICAL KEY. Unity has no KeyCode.Tilde - "~" IS BackQuote with
+        // shift held, and Input.GetKeyDown(BackQuote) is true for BOTH. So repeat must EXCLUDE
+        // shift explicitly; without that, toggling would also fire a repeat on the same frame and
+        // the player would hear the old line read over the toggle announcement.
+        private static bool ShiftHeld
+        {
+            get
+            {
+                return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            }
+        }
+
         // F9 = read the glass's current brewing stats aloud.
         //
         // A QUERY key rather than an automatic re-read after every ingredient: the stats panel is a
@@ -535,7 +549,9 @@ namespace CoffeeTalkAccess
             }
             else if (Input.GetKeyDown(RepeatKey))
             {
-                Speech.RepeatLast();
+                // Same key, split by shift: "~" toggles narration, bare "`" repeats.
+                if (ShiftHeld) Dialogue.DialogueToggle.Toggle();
+                else Speech.RepeatLast();
             }
             else if (Input.GetKeyDown(StatsKey))
             {
