@@ -95,6 +95,13 @@ namespace CoffeeTalkAccess.Brewing
         /// the day's ingredients are - so it is where "the screen is now ready and nothing is
         /// focused" can actually be observed.
         ///
+        /// ⚠ BUT IT RUNS ON THREE PATHS, NOT ONE, AND ONLY ENTRY WANTS US. The glass_value check
+        /// below is what distinguishes them - see its comment. A "the selection is null right now"
+        /// test is NOT sufficient on its own: AddIngredient nulls it too, transiently, before
+        /// re-selecting a line later. Shipping without the glass check made this hook re-pin the
+        /// cursor to the first ingredient on every add, which read to the player as arrow keys that
+        /// did nothing. ⚠ Check WHICH CALLER you are in, not just what the state looks like.
+        ///
         /// Patching the base TG_DrinkManager covers TG_EndlessModeDrinkManager, which inherits it.
         /// </summary>
         [HarmonyPostfix]
@@ -107,9 +114,26 @@ namespace CoffeeTalkAccess.Brewing
                 // way out, where taking focus would fight whatever owns the screen next.
                 if (AccessMod.ReadControllerState() != "BREWING") return;
 
+                // ⚠ ONLY ON ENTRY - AN EMPTY GLASS. AddIngredient also calls SetIngredientsButton
+                // (:663), and it does so AFTER incrementing glass_value but BEFORE re-selecting at
+                // :664-673. So at postfix time the selection is momentarily null on that path too,
+                // and without this check we re-pin the cursor to the FIRST interactable ingredient
+                // on every single add.
+                //
+                // That is not theoretical: log 26-8-11 20:13:47-53 shows "supplied the keyboard's
+                // missing entry selection" firing before all three adds, the player arrowing and
+                // hearing nothing move, and three Coffees going into a glass they were steering
+                // elsewhere. Reported as "the arrow keys don't move the focus".
+                //
+                // The game re-selects perfectly well by itself on that path - lastSelected, or the
+                // Brew button once the glass is full - so there is nothing for us to do there. An
+                // empty glass is the one moment no other path covers.
+                if (GlassValue(__instance) != 0) return;
+
                 // The game seeded the cursor itself - JOYSTICK mode, or one of its ungated paths
-                // (SelectAnyInteractableIngredient, AddIngredient's re-select). Leave it alone; a
-                // second Select() here is the two-disagreeing-cursors failure already paid for.
+                // (SelectAnyInteractableIngredient from a mode flip, the resume-from-phone path).
+                // Leave it alone; a second Select() here is the two-disagreeing-cursors failure
+                // this project has already paid for.
                 if (EventSystem.current != null &&
                     EventSystem.current.currentSelectedGameObject != null) return;
 
