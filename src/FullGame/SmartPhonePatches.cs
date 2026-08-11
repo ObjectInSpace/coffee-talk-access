@@ -6,6 +6,7 @@ using HarmonyLib;
 using MelonLoader;
 using UnityAccessibilityLib;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace CoffeeTalkAccess.FullGame
@@ -145,6 +146,66 @@ namespace CoffeeTalkAccess.FullGame
                 _armed = false;
             }
 
+            /// <summary>
+            /// Selects the app button the game selects for a gamepad, so the home screen has a
+            /// cursor to arrow from on a keyboard.
+            ///
+            /// Reads socialMediaAppButton off the live manager rather than picking a control
+            /// ourselves: it is the game's own first-selected button, so the cursor lands exactly
+            /// where a pad player's would and the app grid's own navigation takes over from there.
+            /// </summary>
+            private static void SupplyHomeScreenSelection()
+            {
+                try
+                {
+                    if (EventSystem.current == null)
+                    {
+                        MelonLogger.Msg("[Phone] home-screen selection skipped: no EventSystem.");
+                        return;
+                    }
+
+                    TG_SmartPhoneManager mgr = UnityEngine.Object.FindObjectOfType<TG_SmartPhoneManager>();
+                    if (mgr == null)
+                    {
+                        MelonLogger.Msg("[Phone] home-screen selection skipped: no phone manager.");
+                        return;
+                    }
+
+                    Button entry = mgr.socialMediaAppButton;
+                    if (entry == null || !entry.gameObject.activeInHierarchy || !entry.interactable)
+                    {
+                        MelonLogger.Msg("[Phone] home-screen selection skipped: entry button not usable.");
+                        return;
+                    }
+
+                    // ⚠ DO NOT SKIP ON "SOMETHING IS ALREADY SELECTED". That check was here and it
+                    // made this whole hook a no-op: opening the phone from the brew pad leaves a
+                    // LIVE ingredient button selected (log 26-8-11_16-45-15 - "Coffee" 84 ms before
+                    // the phone announced), so `sel != null && sel.activeInHierarchy` was true every
+                    // time and we returned without doing anything.
+                    //
+                    // The selection being alive does not mean it is RELEVANT - it belongs to the
+                    // café behind the phone. Same stale-selection trap that broke the brewing entry
+                    // seeding earlier today; the fix is the same, ask whether the selection is on
+                    // THIS screen. Here that is one comparison, because the phone has exactly one
+                    // entry control and we already have it.
+                    GameObject sel = EventSystem.current.currentSelectedGameObject;
+                    if (ReferenceEquals(sel, entry.gameObject))
+                    {
+                        MelonLogger.Msg("[Phone] home-screen selection already correct.");
+                        return;
+                    }
+
+                    entry.Select();
+                    entry.OnSelect(null);
+                    MelonLogger.Msg("[Phone] supplied the keyboard's missing home-screen selection.");
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Warning("[Phone] home-screen selection threw: " + e.Message);
+                }
+            }
+
             internal static void Update()
             {
                 try
@@ -164,6 +225,36 @@ namespace CoffeeTalkAccess.FullGame
                     if (state == null || !state.StartsWith("PHONE")) return;
 
                     _armed = false;
+
+                    // ⚠ SUPPLY THE GAME'S OWN ENTRY SELECTION - AND ONLY ON THE HOME SCREEN.
+                    //
+                    // TG_SmartPhoneManager.HomeScreenButton (:349) ends with
+                    //     if (setCursor && CurrentTypeControllerState == JOYSTICK)
+                    //     { socialMediaAppButton.Select(); socialMediaAppButton.OnSelect(null); }
+                    // with no else - the same missing-else gate as SelectCocoa and the serve
+                    // options. On a keyboard the phone opens with NOTHING selected, so the arrow
+                    // keys have no cursor to move and focus stays on the café behind it. Measured,
+                    // log 26-8-11_16-40-2: the phone announced at 16:41:53.397 and the next focus
+                    // line is "Green tea" - an ingredient.
+                    //
+                    // This is a MISSING TRIGGER, not a missing cursor, and the distinction is the
+                    // whole point: PHONE_HOME is one of the four states the game genuinely
+                    // NAVIGATES (TG_ControllerInputManager:413 routes it to HandleResumeToSmartPhone),
+                    // so a selection here is what the game itself would have made. We select the
+                    // game's OWN choice - socialMediaAppButton - not a control we picked.
+                    //
+                    // ⚠ HOME SCREEN ONLY. The app panes (newspaper, and the other Scrollbar
+                    // readers) are driven by their own UpdateFunction reading Up/Down directly, and
+                    // planting a cursor there is what sent the player wandering out of the phone
+                    // onto the brew pad. Do not widen this to PHONE_*. See FocusRecovery's
+                    // "THE PHONE GETS NO CURSOR FROM US" note and NeedsSelection's whitelist.
+                    // Logged unconditionally: when this hook did nothing, the ONLY question worth
+                    // answering from the log is which state it actually saw, and a silent branch
+                    // cannot answer it. This has already cost one live run.
+                    MelonLogger.Msg("[Phone] entry watcher fired on state=" + state);
+
+                    if (state == "PHONE_HOME") SupplyHomeScreenSelection();
+
                     Announce("Smartphone. Social media, music, drink recipes, newspaper.");
                 }
                 catch (Exception e)

@@ -1,4 +1,4 @@
-# Resolves every string-named reflection target the mod uses against a shipped
+﻿# Resolves every string-named reflection target the mod uses against a shipped
 # Assembly-CSharp.dll. A miss here is a hook that returns null SILENTLY at runtime --
 # the failure mode that looks identical to a working build.
 #
@@ -119,9 +119,6 @@ $members = @(
  'TG_ControllerInputManager|HandlerControllerPress|M','TG_ControllerInputManager|AButtonPressed|M',
  'TG_ControllerInputManager|playerActions|F','TG_ControllerInputManager|currentTypeController|F',
  'TG_ControllerInputManager|keyboardHotkeyManager|F',
- # FocusRecovery.PhoneRoot reads this PRIVATE field to scope "is the selection inside the
- # phone?". A rename returns null silently and the phone stops taking focus again.
- 'TG_SmartPhoneManager|smartPhonePanel|F',
  'TG_InitScreen|languageSettingGO|F','TG_Static|languageList|F','TG_Static|userSettingsData|F',
  'TG_Static|allCharacterDataList|F','TG_Static|profileData|F','TG_Static|localizer|F',
  'TG_Static|CheckContainsUnlockedCharacterDataIdx|M',
@@ -131,6 +128,10 @@ $members = @(
  'TG_DrinkManager|ResetIngredients|M','TG_DrinkManager|SetPreviewStatsDrinkUI|M','TG_DrinkManager|BrewInformationClick|M',
  'TG_MainMenuManager|buttonList|F','TG_MainMenuManager|cursorIdx|F','TG_MainMenuManager|optionButtonPanel|F',
  'TG_MainMenuManager|cursorMenuIdx|F','TG_MainMenuManager|MouseOverManager|M',
+ # BrewingPatches.AfterServeOptions supplies the keyboard's missing selection on the serve
+ # screen. Both are PRIVATE and read by string: a rename leaves serve/trash/latte art
+ # unreachable on a keyboard again, with a clean log.
+ 'TG_GameManager|ServeOptionsBrewModeState|M','TG_GameManager|drinkManager|F',
  'TG_GameManager|optionsUIManager|F','TG_GameManager|chatLogManager|F',
  'TG_ChatLogManager|GetStoryText|M','TG_ChatLogManager|GetCharacterNameLocalization|M',
  'TG_ChatLogManager|StartOpenChatLog|M','TG_ChatLogManager|CloseChatLog|M',

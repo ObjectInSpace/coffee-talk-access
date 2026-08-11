@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.2
+Version 0.9.3
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,28 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.2
+WHAT IS NEW IN 0.9.3
+
+  - The serve options work on a keyboard. After brewing a drink, "serve it",
+    "trash it" and "latte art" could not be reached at all: the game only
+    gives that screen a starting cursor when it thinks you are holding a
+    gamepad, which is why plugging a controller in made it work immediately.
+
+  - Backspace steps back inside the smartphone, which is the keyboard's
+    equivalent of B or Circle on a gamepad. The game never gave the keyboard
+    a back key here - Escape opens the pause menu on those screens instead,
+    and still does. Tab still closes the phone from anywhere.
+
+  - The newspaper reads properly again. 0.9.2 put a cursor on it that fought
+    the arrow keys and then wandered off the phone entirely, onto the brewing
+    screen. The newspaper is scrolled with up and down, which is how the game
+    itself drives that screen, so the mod no longer places a cursor there.
+
+  - The smartphone home screen still takes focus when it opens, and the
+    brewing ingredients still take focus when you enter the brew pad.
+
+
+WHAT WAS NEW IN 0.9.2
 
   - The smartphone takes focus when it opens. Tab opened the phone correctly
     before this, and it announced itself, but the cursor stayed on the screen

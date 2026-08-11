@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
@@ -219,27 +219,32 @@ namespace CoffeeTalkAccess.Menus
                     return;
                 }
 
-                // ⚠ THE PHONE IS A TAKEOVER SCREEN AND NEEDS THE SAME RULE, for the same reason.
+                // ⚠ THE PHONE GETS NO CURSOR FROM US. DO NOT ADD ONE BACK.
                 //
-                // Measured, log 26-8-11_15-23-45: five phone opens. The first got
-                // "supplied missing keyboard selection on PHONE_HOME" - because the selection
-                // happened to be null. The last two announced "Smartphone..." and then focused
-                // GREEN TEA and COFFEE: the phone was open, on top, owning input, while the
-                // EventSystem still pointed at a brewing ingredient underneath. Arrow keys moved the
-                // BREW PAD while the player believed they were in the phone. Reported as Tab not
-                // moving focus to the smartphone - which is a FOCUS bug, not an opening bug; the
-                // phone opened correctly every time.
+                // v0.9.2 seeded focus on every PHONE_* state, on the theory that the phone is a
+                // takeover screen like a popup. That was wrong, and it produced two live bugs in a
+                // row: first a focus FIGHT (re-asserting BackButton every ~90 ms while the player
+                // arrowed), then, once that was guarded, a cursor that WANDERED OFF THE PHONE -
+                // Left Button, Back Button, Scrollbar Vertical, Smart Phone BGPanel, TRASH IT,
+                // SERVE IT, Coffee, Green tea (log 26-8-11_16-30-29). The player was reading the
+                // newspaper and ended up on the brew pad.
                 //
-                // The generic rule below ("a non-null selection means focus is healthy") cannot see
-                // this: the selection is alive, interactable and on screen - it is just on the
-                // screen we LEFT. Same shape as the popup case above, so it takes the same fix
-                // rather than a new mechanism.
-                if (IsPhoneState(AccessMod.ReadControllerState()) &&
-                    !SelectionIsInsidePhone(es.currentSelectedGameObject))
-                {
-                    TakeFocusForPhone();
-                    return;
-                }
+                // The cause is that the phone is NOT EventSystem-driven the way a popup is. The
+                // game routes updateSPFunction to each app's OWN UpdateFunction
+                // (TG_SmartPhoneManager:443-468) and those read input directly:
+                // TG_NewspaperApp.UpdateFunction (:77) polls Up/Down and calls ScrollNews, and
+                // TG_SmartPhoneApps.UpdateFunction (:52) reads Tab to close. The game deliberately
+                // turns the cursor OFF here on a keyboard - SetSwitchCursorSmartphone's else branch
+                // disables BOTH switch cursors.
+                //
+                // So a selection is not missing on these screens; it is not wanted. The phone's
+                // buttons use Automatic navigation, which is geometric and canvas-blind, so ANY
+                // cursor we plant will eventually walk out onto the café behind it. There is no
+                // guard that fixes this - the fix is to not add the cursor.
+                //
+                // ⚠ The player's rule, 2026-08-11: "We shouldn't ever add a cursor." The game
+                // tracked this perfectly well before the mod arrived. See
+                // [[coffee-talk-dont-add-state-the-game-has]] and [[coffee-talk-own-cursor]].
 
                 if (es.currentSelectedGameObject != null)
                 {
@@ -384,93 +389,7 @@ namespace CoffeeTalkAccess.Menus
         }
 
         /// <summary>
-        /// Every phone screen. Matched on the PHONE_ prefix rather than listing the seven states
-        /// (PHONE_HOME, PHONE_SOCMED, PHONE_SOCMED_ACCOUNT, PHONE_DRINK, PHONE_NEWSPAPER,
-        /// PHONE_MUSIC, PHONE_MUSIC_NOW_PLAYING) so a state added later is covered by default -
-        /// the failure direction that matters here is MISSING one, which reads to the player as a
-        /// screen that does not take focus.
-        /// </summary>
-        private static bool IsPhoneState(string state)
-        {
-            return state != null && state.StartsWith("PHONE");
-        }
-
-        /// <summary>
-        /// The phone's root panel, or null when it is not up. `smartPhonePanel` is private, and it
-        /// is deliberately the target rather than `homeScreenPanel`: it is the parent of the home
-        /// screen AND of all four app panes, so one IsChildOf test covers every phone screen.
-        /// </summary>
-        private static Component PhoneRoot()
-        {
-            try
-            {
-                Type mgrType = AccessTools.TypeByName("TG_SmartPhoneManager");
-                if (mgrType == null) return null;
-
-                UnityEngine.Object mgr = UnityEngine.Object.FindObjectOfType(mgrType);
-                if (mgr == null) return null;
-
-                Component panel = AccessTools.Field(mgrType, "smartPhonePanel")?.GetValue(mgr) as Component;
-                return panel != null && panel.gameObject.activeInHierarchy ? panel : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static bool SelectionIsInsidePhone(GameObject selected)
-        {
-            if (selected == null) return false;
-
-            Component phone = PhoneRoot();
-            if (phone == null) return false;
-
-            return selected.transform.IsChildOf(phone.transform);
-        }
-
-        /// <summary>
-        /// Moves focus onto the phone when it has opened over a screen that still holds the
-        /// selection. Mirrors TakeFocusForPopUp deliberately - same problem, same shape.
-        ///
-        /// ⚠ Picks the first usable control INSIDE the phone rather than a named button, because
-        /// which screen is showing depends on the app: the home screen has its four app buttons,
-        /// but an app pane has its own controls and no app buttons at all.
-        /// </summary>
-        private static void TakeFocusForPhone()
-        {
-            try
-            {
-                Component phone = PhoneRoot();
-                if (phone == null) return;
-
-                Selectable target = null;
-                foreach (Selectable s in phone.GetComponentsInChildren<Selectable>(false))
-                {
-                    if (!IsUsable(s)) continue;
-                    target = s;
-                    break;
-                }
-
-                if (target == null) return;
-
-                if (EventSystem.current != null &&
-                    ReferenceEquals(EventSystem.current.currentSelectedGameObject, target.gameObject)) return;
-
-                SelectAndNotify(target);
-                MelonLogger.Msg("[Focus] phone took focus from the screen behind it: "
-                    + target.gameObject.name);
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Warning("[Focus] phone focus threw: " + e.Message);
-            }
-        }
-
-        /// <summary>
-        /// The popup UI that is currently up, or null. Reads TG_PopUpManager's OWN serialized
-        /// references rather than searching the scene, so we act on exactly the object the game
-        /// considers current. Bound by string: both fields are private.
+        /// The popup currently on screen, or null when none is up.
         /// </summary>
         private static Component ActivePopUp()
         {
@@ -495,10 +414,6 @@ namespace CoffeeTalkAccess.Menus
             }
         }
 
-        /// <summary>
-        /// True when the current selection already sits inside the live popup, in which case the
-        /// game (or an earlier pass of ours) has done the job and we must not touch it.
-        /// </summary>
         private static bool SelectionIsInsidePopUp(GameObject selected)
         {
             if (selected == null) return false;

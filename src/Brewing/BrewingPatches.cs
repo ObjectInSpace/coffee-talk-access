@@ -174,6 +174,75 @@ namespace CoffeeTalkAccess.Brewing
         }
 
         /// <summary>
+        /// Supplies the keyboard's missing selection on the SERVE OPTIONS screen - serve it, trash
+        /// it, and (with milk) latte art.
+        ///
+        /// THE GAP, and it is the same one as the brew pad's, in a second place:
+        ///
+        ///   TG_GameManager.ServeOptionsBrewModeState (:376)
+        ///       ChangeStateController(VIEWING_GLASS);
+        ///       if (CurrentTypeControllerState == JOYSTICK) drinkManager.SelectServeGlassButton();
+        ///
+        /// No else branch. On a keyboard nothing is ever selected, so the arrow keys have no
+        /// starting position to move from and the three buttons are unreachable - the player brews
+        /// a drink and lands on a screen that answers nothing.
+        ///
+        /// MEASURED, log 26-8-11_15-36-43: "Brewed: Espresso." at 15:53:26 and then SEVENTY-FOUR
+        /// SECONDS of silence, broken only at 15:54:40 by "SERVE IT" - 0.2 s AFTER a PlayStation 5
+        /// controller was plugged in and the mode flipped to JOYSTICK. Reported as "it works on
+        /// controller but not on keyboard", which is exactly what the gate does. ⚠ Note the whole
+        /// screen was reachable the moment a pad appeared: this is a MISSING TRIGGER, not a missing
+        /// implementation, so we supply the trigger and let the game choose the control.
+        ///
+        /// Hooked on ServeOptionsBrewModeState rather than on SelectServeGlassButton, because the
+        /// latter is the call that never happens - hooking it would attach cleanly and never fire.
+        /// See [[gated-call-vs-call-that-runs]].
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TG_GameManager), "ServeOptionsBrewModeState")]
+        public static void AfterServeOptions(TG_GameManager __instance)
+        {
+            try
+            {
+                if (__instance == null) return;
+
+                TG_DrinkManager mgr = AccessTools.Field(typeof(TG_GameManager), "drinkManager")
+                    ?.GetValue(__instance) as TG_DrinkManager;
+                if (mgr == null) return;
+
+                // The game seeded it itself (JOYSTICK), or the player is already on one of these
+                // buttons. Leave it alone - a second Select() here is the disagreeing-cursor trap.
+                GameObject sel = EventSystem.current != null
+                    ? EventSystem.current.currentSelectedGameObject
+                    : null;
+                if (sel != null && sel.activeInHierarchy && IsBrewingControl(mgr, sel))
+                {
+                    MelonLogger.Msg("[Brew] serve options: game already seeded the cursor.");
+                    return;
+                }
+
+                // ⚠ PICK A LIVE BUTTON, NOT A FIXED ONE. latteArtButton is only shown when the drink
+                // contains milk (:1256) and trashItButton is toggled too (:966-970), so hardcoding
+                // serveGlassButton would be right only by luck and IsUsable is what keeps this
+                // honest. Serve is preferred because it is the game's OWN choice on a pad.
+                Selectable target = FirstUsable(mgr.serveGlassButton, mgr.trashItButton, mgr.latteArtButton);
+                if (target == null)
+                {
+                    MelonLogger.Msg("[Brew] serve options: no usable button to focus.");
+                    return;
+                }
+
+                target.Select();
+                MelonLogger.Msg("[Brew] supplied the keyboard's missing serve-options selection: "
+                    + target.gameObject.name);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Brew] entry selection threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
         /// Announces the outcome of adding an ingredient - including the refusals, which the game
         /// communicates only by not responding.
         ///
@@ -452,6 +521,29 @@ namespace CoffeeTalkAccess.Brewing
         private static bool IsSame(Button button, GameObject go)
         {
             return button != null && button.gameObject == go;
+        }
+
+        /// <summary>
+        /// The first button that is actually on screen and usable, in preference order.
+        ///
+        /// ⚠ Checks activeInHierarchy AND interactable, because this screen hides buttons rather
+        /// than disabling them (latte art needs milk, trash-it is toggled), and SetInteractable
+        /// (:1013-1015) greys all three out during the serve animation. Selecting a hidden or dead
+        /// button puts the cursor somewhere the player cannot hear or leave.
+        /// </summary>
+        private static Selectable FirstUsable(params Selectable[] candidates)
+        {
+            if (candidates == null) return null;
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                Selectable s = candidates[i];
+                if (s == null) continue;
+                if (!s.gameObject.activeInHierarchy) continue;
+                if (!s.interactable) continue;
+                return s;
+            }
+            return null;
         }
 
         /// <summary>Reads the private glass_value (how many ingredients are in the glass).</summary>

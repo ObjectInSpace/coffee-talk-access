@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.2", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.3", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -241,8 +241,10 @@ namespace CoffeeTalkAccess
                 // private), which is the failure mode this list exists to catch: a rename would
                 // leave the arrow keys dead on every screen with an otherwise clean log. It is also
                 // the hook whose HOST was wrong once - see KeyboardNav.AfterControllerUpdate.
-                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit). Both hooks share
-                // this target deliberately; ReportDoublePatches exempts it by name.
+                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit) and PhoneBackKey
+                // (Backspace -> back, PHONE_* only). All three share this target deliberately;
+                // ReportDoublePatches exempts it by name. They cannot collide: different keys, and
+                // the two hotkey readers gate on disjoint states.
                 //
                 // ⚠ DO NOT ADD A TAB -> SMARTPHONE HOOK HERE. 0.9.1 did, on the theory that the
                 // game sits in JOYSTICK mode so HandlerKeyboard never runs and never reaches
@@ -272,6 +274,10 @@ namespace CoffeeTalkAccess
                 { "TG_DrinkManager", "ServeGlassDrink" },
                 { "TG_DrinkManager", "ServeGlassDrinkLatteArt" },
                 { "TG_DrinkManager", "ResetIngredients" },
+                // Private, patched by STRING name. It is the keyboard's only route onto the serve
+                // options (serve it / trash it / latte art) - the game selects them for a gamepad
+                // only, so a silent miss here makes that whole screen unreachable by ear.
+                { "TG_GameManager", "ServeOptionsBrewModeState" },
                 { "TG_DrinkManager", "BrewInformationClick" },
                 { "LatteArtManager", "ActivateLatteArt" },
                 { "LatteArtManager", "CloseLatteArt" },
@@ -451,9 +457,10 @@ namespace CoffeeTalkAccess
                 if (m.DeclaringType?.Name == "TG_DrinkManager" && m.Name == "AddIngredient") continue;
 
                 // TG_ControllerInputManager.ControllerUpdateFunction is the mod's per-frame input
-                // host and carries two deliberate postfixes: KeyboardNav.AfterControllerUpdate
-                // (pumps the directional routers) and MainMenuHotkeys.AfterControllerUpdate (reads
-                // Tab/Escape on the main menu). Both are hosted here for the same load-bearing
+                // host and carries three deliberate postfixes: KeyboardNav.AfterControllerUpdate
+                // (pumps the directional routers), MainMenuHotkeys.AfterControllerUpdate (reads
+                // Tab/Escape on the main menu) and PhoneBackKey.AfterControllerUpdate (Backspace on
+                // PHONE_* only). All are hosted here for the same load-bearing
                 // reason - it runs unconditionally from Update() in BOTH input modes, whereas
                 // HandlerKeyboard runs only in KEYBOARD mode, which a connected pad can suppress
                 // indefinitely. Neither speaks on the frames the other acts: KeyboardNav narrates
