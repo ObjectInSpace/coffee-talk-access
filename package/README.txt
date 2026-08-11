@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.0
+Version 0.9.1
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,25 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.0
+WHAT IS NEW IN 0.9.1
+
+  - The brewing screen works with the keyboard. Arrow keys move between the
+    ingredients and Enter picks one. Before this, nothing on that screen ever
+    took focus on a keyboard: the game only gives the brewing cursor a starting
+    position when it thinks you are holding a gamepad, and arrow keys move
+    relative to that starting position, so with none there was nothing to move.
+    This was most visible on the first brew of the game, where Drew has only
+    half his ingredients.
+
+  - The mod manager's "add all" and "remove all" buttons no longer take focus
+    at all. They cannot be reached by arrow keys in the game either, with or
+    without a gamepad - they are mouse-only buttons - and 0.9.0's attempt to
+    wire them into the arrow-key order was a mistake on this mod's part. They
+    still work with the mouse. Everything else on that screen is unchanged, and
+    Tab still closes it from anywhere, including from a mod row.
+
+
+WHAT WAS NEW IN 0.9.0
 
   - The exit and mod manager buttons are reachable. The main menu has three
     buttons that sit outside the list the cursor walks - exit, mods, and a
@@ -28,6 +46,8 @@ WHAT IS NEW IN 0.9.0
     all" buttons, which shipped with no way to move off them, and on a mod row
     when only one mod is installed - the game wires the rows into a ring that
     wraps around to itself with no way out.
+    (Revised in 0.9.1: mod rows are meant to wrap, and Tab is how you leave
+    the list. See above.)
 
   - Enter on a mod now actually turns it on or off, and says which. The game's
     own keyboard path only played the click sound without doing anything, so
