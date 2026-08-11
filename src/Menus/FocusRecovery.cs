@@ -219,6 +219,28 @@ namespace CoffeeTalkAccess.Menus
                     return;
                 }
 
+                // ⚠ THE PHONE IS A TAKEOVER SCREEN AND NEEDS THE SAME RULE, for the same reason.
+                //
+                // Measured, log 26-8-11_15-23-45: five phone opens. The first got
+                // "supplied missing keyboard selection on PHONE_HOME" - because the selection
+                // happened to be null. The last two announced "Smartphone..." and then focused
+                // GREEN TEA and COFFEE: the phone was open, on top, owning input, while the
+                // EventSystem still pointed at a brewing ingredient underneath. Arrow keys moved the
+                // BREW PAD while the player believed they were in the phone. Reported as Tab not
+                // moving focus to the smartphone - which is a FOCUS bug, not an opening bug; the
+                // phone opened correctly every time.
+                //
+                // The generic rule below ("a non-null selection means focus is healthy") cannot see
+                // this: the selection is alive, interactable and on screen - it is just on the
+                // screen we LEFT. Same shape as the popup case above, so it takes the same fix
+                // rather than a new mechanism.
+                if (IsPhoneState(AccessMod.ReadControllerState()) &&
+                    !SelectionIsInsidePhone(es.currentSelectedGameObject))
+                {
+                    TakeFocusForPhone();
+                    return;
+                }
+
                 if (es.currentSelectedGameObject != null)
                 {
                     // Focus is healthy. Remember WHERE, so that if the game destroys this selection
@@ -359,6 +381,90 @@ namespace CoffeeTalkAccess.Menus
         private static bool IsPopUpState(string state)
         {
             return state == "POP_UP_CONFIRMATION" || state == "POP_UP_LOAD";
+        }
+
+        /// <summary>
+        /// Every phone screen. Matched on the PHONE_ prefix rather than listing the seven states
+        /// (PHONE_HOME, PHONE_SOCMED, PHONE_SOCMED_ACCOUNT, PHONE_DRINK, PHONE_NEWSPAPER,
+        /// PHONE_MUSIC, PHONE_MUSIC_NOW_PLAYING) so a state added later is covered by default -
+        /// the failure direction that matters here is MISSING one, which reads to the player as a
+        /// screen that does not take focus.
+        /// </summary>
+        private static bool IsPhoneState(string state)
+        {
+            return state != null && state.StartsWith("PHONE");
+        }
+
+        /// <summary>
+        /// The phone's root panel, or null when it is not up. `smartPhonePanel` is private, and it
+        /// is deliberately the target rather than `homeScreenPanel`: it is the parent of the home
+        /// screen AND of all four app panes, so one IsChildOf test covers every phone screen.
+        /// </summary>
+        private static Component PhoneRoot()
+        {
+            try
+            {
+                Type mgrType = AccessTools.TypeByName("TG_SmartPhoneManager");
+                if (mgrType == null) return null;
+
+                UnityEngine.Object mgr = UnityEngine.Object.FindObjectOfType(mgrType);
+                if (mgr == null) return null;
+
+                Component panel = AccessTools.Field(mgrType, "smartPhonePanel")?.GetValue(mgr) as Component;
+                return panel != null && panel.gameObject.activeInHierarchy ? panel : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool SelectionIsInsidePhone(GameObject selected)
+        {
+            if (selected == null) return false;
+
+            Component phone = PhoneRoot();
+            if (phone == null) return false;
+
+            return selected.transform.IsChildOf(phone.transform);
+        }
+
+        /// <summary>
+        /// Moves focus onto the phone when it has opened over a screen that still holds the
+        /// selection. Mirrors TakeFocusForPopUp deliberately - same problem, same shape.
+        ///
+        /// ⚠ Picks the first usable control INSIDE the phone rather than a named button, because
+        /// which screen is showing depends on the app: the home screen has its four app buttons,
+        /// but an app pane has its own controls and no app buttons at all.
+        /// </summary>
+        private static void TakeFocusForPhone()
+        {
+            try
+            {
+                Component phone = PhoneRoot();
+                if (phone == null) return;
+
+                Selectable target = null;
+                foreach (Selectable s in phone.GetComponentsInChildren<Selectable>(false))
+                {
+                    if (!IsUsable(s)) continue;
+                    target = s;
+                    break;
+                }
+
+                if (target == null) return;
+
+                if (EventSystem.current != null &&
+                    ReferenceEquals(EventSystem.current.currentSelectedGameObject, target.gameObject)) return;
+
+                SelectAndNotify(target);
+                MelonLogger.Msg("[Focus] phone took focus from the screen behind it: "
+                    + target.gameObject.name);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Focus] phone focus threw: " + e.Message);
+            }
         }
 
         /// <summary>

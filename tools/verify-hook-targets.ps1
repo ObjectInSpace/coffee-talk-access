@@ -119,6 +119,9 @@ $members = @(
  'TG_ControllerInputManager|HandlerControllerPress|M','TG_ControllerInputManager|AButtonPressed|M',
  'TG_ControllerInputManager|playerActions|F','TG_ControllerInputManager|currentTypeController|F',
  'TG_ControllerInputManager|keyboardHotkeyManager|F',
+ # FocusRecovery.PhoneRoot reads this PRIVATE field to scope "is the selection inside the
+ # phone?". A rename returns null silently and the phone stops taking focus again.
+ 'TG_SmartPhoneManager|smartPhonePanel|F',
  'TG_InitScreen|languageSettingGO|F','TG_Static|languageList|F','TG_Static|userSettingsData|F',
  'TG_Static|allCharacterDataList|F','TG_Static|profileData|F','TG_Static|localizer|F',
  'TG_Static|CheckContainsUnlockedCharacterDataIdx|M',

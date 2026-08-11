@@ -124,16 +124,40 @@ namespace CoffeeTalkAccess.Brewing
         {
             try
             {
+                // ⚠ DIAGNOSTIC, NOT DECORATION. Two fixes here have now failed live, both because I
+                // reasoned about runtime values from the decompile instead of reading them. This
+                // prints the exact inputs to both guards BEFORE either can return, so the next log
+                // says which branch declined rather than leaving a silent early-return to infer.
+                // Costs one line per brewing entry. See [[dump-the-live-hierarchy]].
+                string stateNow = AccessMod.ReadControllerState();
+                GameObject selNow = EventSystem.current != null
+                    ? EventSystem.current.currentSelectedGameObject
+                    : null;
+                MelonLogger.Msg("[Brew] entry hook: state=" + stateNow
+                    + ", selection=" + (selNow != null ? selNow.name : "<null>"));
+
                 // ResetIngredients also runs on the way out of a serve, where the screen is being
                 // torn down and taking focus would fight whatever owns it next.
-                if (AccessMod.ReadControllerState() != "BREWING") return;
+                if (stateNow != "BREWING")
+                {
+                    MelonLogger.Msg("[Brew] entry hook declined: not BREWING.");
+                    return;
+                }
 
-                // The game seeded the cursor itself - JOYSTICK mode, or one of its ungated paths
-                // (SelectAnyInteractableIngredient from a mode flip, the resume-from-phone path).
-                // Leave it alone; a second Select() here is the two-disagreeing-cursors failure
-                // this project has already paid for.
-                if (EventSystem.current != null &&
-                    EventSystem.current.currentSelectedGameObject != null) return;
+                // ⚠ THE SELECTION IS OFTEN NON-NULL HERE AND STALE. Entering the brewing screen from
+                // the phone leaves the EventSystem pointed at a phone-app button (log
+                // 26-8-11_15-23-45: "[Focus] Brewpad" 106 ms after "Glass emptied."). A plain
+                // null-check therefore reads "someone already seeded the cursor" and declines, which
+                // is how the drinks ended up with no initial focus.
+                //
+                // What we actually care about is whether the selection is a control ON THIS SCREEN.
+                // A selected object that is not one of this manager's ingredient buttons - or that
+                // is inactive - is a leftover from the screen we just left, not a cursor to respect.
+                if (selNow != null && selNow.activeInHierarchy && IsBrewingControl(__instance, selNow))
+                {
+                    MelonLogger.Msg("[Brew] entry hook declined: brewing control already selected.");
+                    return;
+                }
 
                 // ⚠ The GAME's own chooser, not ours. It prefers the first INTERACTABLE ingredient
                 // and falls back to Brew or Reset when none is (:569-582) - which is exactly what a
@@ -383,6 +407,51 @@ namespace CoffeeTalkAccess.Brewing
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// True when the object is one of THIS screen's own controls.
+        ///
+        /// ⚠ The point is to tell "the cursor is already where it should be" apart from "the
+        /// EventSystem is still pointing at the screen we just left". Entering brewing from the
+        /// phone leaves a phone-app button selected, and a bare null-check cannot see the
+        /// difference - which is exactly how the entry seeding stopped happening.
+        ///
+        /// Checked against the manager's OWN button fields rather than by name or by scanning the
+        /// scene, so a renamed GameObject or a second canvas cannot fool it.
+        /// </summary>
+        private static bool IsBrewingControl(TG_DrinkManager mgr, GameObject go)
+        {
+            try
+            {
+                if (mgr == null || go == null) return false;
+
+                if (mgr.ingredientsButtons != null)
+                {
+                    for (int i = 0; i < mgr.ingredientsButtons.Count; i++)
+                    {
+                        Button b = mgr.ingredientsButtons[i];
+                        if (b != null && b.gameObject == go) return true;
+                    }
+                }
+
+                return IsSame(mgr.brewingButton, go)
+                    || IsSame(mgr.resetBrewingButton, go)
+                    || IsSame(mgr.serveGlassButton, go)
+                    || IsSame(mgr.trashItButton, go)
+                    || IsSame(mgr.latteArtButton, go);
+            }
+            catch (Exception)
+            {
+                // A field the retail build does not have must not take the entry seeding down with
+                // it; treating it as "not ours" just means we seed, which is the safe direction.
+                return false;
+            }
+        }
+
+        private static bool IsSame(Button button, GameObject go)
+        {
+            return button != null && button.gameObject == go;
         }
 
         /// <summary>Reads the private glass_value (how many ingredients are in the glass).</summary>
