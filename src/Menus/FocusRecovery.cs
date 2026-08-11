@@ -158,16 +158,26 @@ namespace CoffeeTalkAccess.Menus
                 case "MOD_MENU":
                     return true;
 
-                // ⚠ BREWING IS DELIBERATELY EXCLUDED, despite TG_DrinkManager:547 having the same
-                // gated-Select bug. Two reasons, and both are why a whitelist beats "any state":
-                //  1. It already recovers on its own - brewing has many UNgated Select() calls
-                //     (:312, :577, :587, :667-672), and it navigated correctly in the 01:16 live
-                //     run, so there is nothing to fix.
-                //  2. Stepping in would be ACTIVELY HARMFUL. ServeGlassDrink nulls the selection
-                //     (:829) while the state is still BREWING and hands off to dialogue. Recovering
-                //     there would drag focus back onto an ingredient button mid-serve - the mod
-                //     fighting the game for the cursor, which is the failure this class must not
-                //     reintroduce.
+                // ⚠ BREWING IS EXCLUDED, AND THE REASON IS NOT THE ONE THAT USED TO BE WRITTEN HERE.
+                //
+                // The old text claimed brewing "already recovers on its own" because of the ungated
+                // Select() calls at :312, :577, :587, :667-672. That is FALSE, and it shipped a dead
+                // screen: every one of those needs an interaction to have ALREADY happened (:577
+                // fires from CheckPluggedInState, i.e. a MODE CHANGE; :667-672 is the
+                // resume-from-phone path; AddIngredient re-selects only after an ingredient went
+                // in). None runs on plain entry with an empty glass. The "01:16 live run" cited as
+                // proof reached brewing via a mode flip, which seeds through CheckPluggedInState -
+                // which is exactly why the bug passed a live test. ⚠ A screen working in a live run
+                // does NOT prove its ENTRY path works; check which path the run took.
+                //
+                // Brewing IS broken on a keyboard (TG_DrinkManager:547, SelectCocoa, JOYSTICK-gated)
+                // and it is fixed in BrewingPatches.AfterSetIngredientsButton instead of here. That hook sits
+                // on the entry point itself, so it is present for the one moment a selection is
+                // missing and absent for every other. This class watches for ANY null selection,
+                // which on this screen would also catch the one ServeGlassDrink makes deliberately
+                // at :829 while the state is still BREWING - requiring a glass_value guard and a
+                // scoped finder to undo the over-reach. Recovering the entry point directly needs
+                // neither. See that method's comment for the full reasoning.
                 default:
                     return false;
             }

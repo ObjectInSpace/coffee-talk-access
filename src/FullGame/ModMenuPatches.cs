@@ -37,6 +37,15 @@ namespace CoffeeTalkAccess.FullGame
     ///      (`if (maxUILength > 0)`), which is why recovery fell through to the close button.
     /// ChangeUI:217 even has an explicit KEYBOARD branch that hides the controller hint panel, so
     /// keyboard players were a known case that simply got less.
+    ///
+    /// ⚠ GATE 2 IS THE WHOLE STORY FOR NAVIGATION - AND THE FIX IS A TRIGGER, NOT A GRAPH.
+    /// This class twice re-modelled the screen's navigation for the keyboard and twice had to undo
+    /// it (2026-08-11). The mod rows form a deliberate closed ring, and the Add-All/Remove-All
+    /// buttons are mouse-only; NEITHER is a graph the game wants navigable. The keyboard's real gap
+    /// is that ControllerHandle never runs, so B/LB/RB have no equivalent - which AfterUpdate
+    /// supplies as Tab and [ / ], calling the game's own code. When the game gates a WORKING
+    /// implementation behind JOYSTICK, supply the missing trigger; do not rebuild the screen around
+    /// what the keyboard would have done. See BrewingPatches.AfterSetIngredientsButton.
     /// </summary>
     /// ⚠ BOUND ENTIRELY BY STRING, and attached MANUALLY - never by [HarmonyPatch] attribute.
     /// TG_ModManagerUI does not exist in the DEMO assembly at all (MOD_MENU is the one value retail
@@ -61,10 +70,13 @@ namespace CoffeeTalkAccess.FullGame
                 Type t = AccessTools.TypeByName("TG_ModManagerUI");
                 if (t == null) return 0;   // demo build - expected, not an error.
 
+                // Close() is deliberately NOT hooked. It once restored the promo button's navigation,
+                // which this class no longer touches - see RepairNavigation. Nothing else needs
+                // undoing on close: the two dead-end buttons belong to the mod menu and are rebuilt
+                // with it.
                 int attached = 0;
                 attached += Attach(harmony, t, "Open", nameof(AfterOpen));
                 attached += Attach(harmony, t, "Update", nameof(AfterUpdate));
-                attached += Attach(harmony, t, "Close", nameof(AfterClose));
                 return attached;
             }
             catch (Exception e)
@@ -173,106 +185,67 @@ namespace CoffeeTalkAccess.FullGame
         internal const string CloseButtonLabel = "Close mod manager";
 
         /// <summary>
-        /// Wires the two "all mods" buttons into the navigation graph, and takes the promo button
-        /// OUT of it.
+        /// Takes the two "all mods" buttons OUT of the navigation graph, because they are focus
+        /// traps and the game never intended them to be navigable.
         ///
-        /// ⚠ BOTH FIXES ARE TO SHIPPED SCENE DATA, not to code, which is why no amount of reading
-        /// TG_ModManagerUI explains the symptom. Confirmed by an F10 dump taken inside MOD_MENU:
+        /// ⚠ THIS IS SHIPPED SCENE DATA, not code, which is why no amount of reading TG_ModManagerUI
+        /// explains the symptom. Confirmed by an F10 dump taken inside MOD_MENU:
         ///
-        ///   ModUIManager/ModManagerUICanvas/BlockPanel/CloseModButton              nav=Automatic
         ///   ModUIManager/.../BackgroundPanel/AddAllModButton     nav=Explicit up=- down=- left=- right=-
         ///   ModUIManager/.../BackgroundPanel/RemoveAllModButton  nav=Explicit up=- down=- left=- right=-
-        ///   CanvasMainMenuUI/SafeArea/PromotionButton                              nav=Automatic
         ///
-        /// 1. ADD-ALL / REMOVE-ALL ARE DEAD ENDS. Navigation.Mode.Explicit with all four targets
-        ///    null means the EventSystem can never move off them - focus enters and cannot leave.
-        ///    `SetNavigation` only ever wires the mod ROWS (TG_ModContentListPanelUI:236-250); these
-        ///    two are never given targets at ANY list size, so this traps with 50 mods just as it
-        ///    does with none. Reported live as "I can go down from there to remove all mods, but
-        ///    that appears to trap the focus".
+        /// Navigation.Mode.Explicit with all four targets null means the EventSystem can never move
+        /// off them: focus enters and cannot leave. Reported live as "I can go down from there to
+        /// remove all mods, but that appears to trap the focus". It also caused a RECOVERY LOOP that
+        /// read as "focusing nothing" - FocusRecovery selected the dead end, the healthy-focus branch
+        /// cleared its one-per-screen guard, the selection was lost again, seven times in a row.
         ///
-        ///    It also caused a RECOVERY LOOP that read as "focusing nothing": FocusRecovery selected
-        ///    the dead-end button, the healthy-focus branch cleared its one-per-screen guard, the
-        ///    selection was lost again, and the cycle repeated - seven "restored the control you
-        ///    were on: AddAllModButton" lines in a row. Fixing the graph removes the cause; a guard
-        ///    change would only have hidden it.
+        /// ⚠ MODE.NONE, NOT A WIRED GRAPH. An earlier version pointed their up/down at the close
+        /// button. That was the mod inventing a navigation route the game does not have: the panel
+        /// wires ONLY mod rows (TG_ModContentListPanelUI:230-250 - every write is modUI[...]), and
+        /// invokeAllButton gets an onClick listener and nothing else (:67-69). ControllerHandle has
+        /// branches for B and LB/RB only. So NO path, controller or keyboard, ever reaches these two
+        /// by navigation - they are mouse-only controls that were left in Explicit mode by mistake.
+        /// Mode.None states that fact instead of papering over it, and it is less code.
         ///
-        /// 2. THE PROMO BUTTON IS NOT PART OF THIS SCREEN. It lives on CanvasMainMenuUI, the mod
-        ///    menu's code never references it (grepped all four TG_Mod* classes: zero hits), and
-        ///    TG_MainMenuManager owns its lifecycle and points it at a Steam store URL. It is
-        ///    reachable only because it and CloseModButton are both nav=Automatic, which is
-        ///    GEOMETRIC and canvas-blind - Unity picks the nearest selectable in the direction
-        ///    pressed. Every other main-menu control is nav=None, which is exactly why nothing else
-        ///    bleeds through and why this looked like it might belong to the screen.
+        /// They stay visible and mouse-clickable; they simply stop being navigation targets, so
+        /// arrowing through the screen can no longer strand the player on one.
         ///
-        ///    ⚠ It is active at all only because opening the mod menu does NOT route through
-        ///    DisableOtherMainMenu/SetActiveAnotherButton, so the main menu never hides its
-        ///    satellites. Do not "fix" that by calling those - the main menu is mid-state and
-        ///    hiding its buttons from under a screen it does not own is the mod fighting the game.
+        /// ⚠ NOT RESTORED ON CLOSE, deliberately - unlike the promo button this once also touched.
+        /// These two belong to the mod menu itself and are rebuilt with it, so there is no other
+        /// screen to hand them back to. (The promo button DID need restoring, which is precisely why
+        /// it no longer belongs here: it lives on CanvasMainMenuUI, and reshaping a screen this mod
+        /// does not own - then carrying machinery to undo that - was doing too much.)
         ///
         /// Applied on Open (postfix) so it lands after Init/Refresh have built the lists, and
-        /// re-applied rather than cached because the panels rebuild their graph whenever a mod is
-        /// added or removed.
+        /// re-applied rather than cached because the panels rebuild whenever a mod is added.
         /// </summary>
         private static void RepairNavigation(object manager)
         {
-            Selectable close = FindIn(manager, "closeButton");
-            if (close == null) return;
-
-            Selectable add = FindByName("AddAllModButton");
-            Selectable remove = FindByName("RemoveAllModButton");
-
-            // Give each dead end a way back to the close button, which is the one control on this
-            // screen that is always present and always leads somewhere (its onClick is Close).
-            // Deliberately NOT a full graph: with an empty list there is nothing else to point at,
-            // and the game rebuilds the row graph itself whenever the list changes.
-            LinkUp(add, close);
-            LinkUp(remove, close);
-
-            // The mod ROWS wrap into a closed ring with no exit - see LinkRowsToEscape. Done here,
-            // after Init/Refresh have built them, and repeated on every Open because the panels
-            // rebuild their graph whenever the list changes.
-            LinkRowsToEscape(manager, close);
-
-            // Take the promo button out of reach WITHOUT deactivating it - the main menu owns that
-            // object and will show/hide it on its own schedule. Mode.None leaves it clickable by
-            // mouse and visible to sighted players; it simply stops being a navigation target.
-            Selectable promo = FindByName("PromotionButton");
-            if (promo != null && promo.navigation.mode != Navigation.Mode.None)
-            {
-                _promoPrevious = promo.navigation;
-                _promoPatched = promo;
-                Navigation off = promo.navigation;
-                off.mode = Navigation.Mode.None;
-                promo.navigation = off;
-                MelonLogger.Msg("[ModMenu] promo button removed from navigation (belongs to the main menu).");
-            }
+            RemoveFromNavigation(FindByName("AddAllModButton"));
+            RemoveFromNavigation(FindByName("RemoveAllModButton"));
         }
 
         /// <summary>
-        /// The promo button's ORIGINAL navigation, restored when the mod menu closes.
+        /// Takes a control out of keyboard navigation without hiding or disabling it.
         ///
-        /// Without this the main menu would keep a promo button that no longer participates in
-        /// navigation for the rest of the session - the mod having quietly broken a control on a
-        /// screen it does not own. Anything this class disables, it must put back.
+        /// Only acts on a genuine dead end - Explicit mode with no targets at all. If the game ever
+        /// wires these itself, or a future build does, its graph is left alone rather than
+        /// overwritten.
         /// </summary>
-        private static Navigation _promoPrevious;
-        private static Selectable _promoPatched;
-
-        /// <summary>Restores the promo button's navigation when the screen closes.</summary>
-        public static void AfterClose()
+        private static void RemoveFromNavigation(Selectable target)
         {
-            try
-            {
-                if (_promoPatched == null) return;
-                _promoPatched.navigation = _promoPrevious;
-                _promoPatched = null;
-                MelonLogger.Msg("[ModMenu] promo button navigation restored.");
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Warning("[ModMenu] promo restore threw: " + e.Message);
-            }
+            if (target == null) return;
+
+            Navigation nav = target.navigation;
+            if (nav.mode != Navigation.Mode.Explicit) return;
+            if (nav.selectOnUp != null || nav.selectOnDown != null
+                || nav.selectOnLeft != null || nav.selectOnRight != null) return;
+
+            nav.mode = Navigation.Mode.None;
+            target.navigation = nav;
+            MelonLogger.Msg("[ModMenu] " + target.gameObject.name
+                + " removed from navigation (dead end; mouse-only control).");
         }
 
         /// <summary>
@@ -418,71 +391,6 @@ namespace CoffeeTalkAccess.FullGame
             Type t = AccessTools.TypeByName("TG_ModManagerUI");
             if (t == null) return null;
             return UnityEngine.Object.FindObjectOfType(t);
-        }
-
-        /// <summary>
-        /// Gives the mod ROWS a way out of their own list.
-        ///
-        /// ⚠ SetNavigation (TG_ModContentListPanelUI:221-250) wires every row's up/down to its
-        /// neighbours and WRAPS at both ends - so the rows form a closed ring with no exit. With a
-        /// single mod installed that ring is one element pointing at ITSELF, which is why the player
-        /// reported "it was the only thing that got focus; the add and remove mod buttons no longer
-        /// got focus": the row was not stuck by accident, the graph genuinely had nowhere else to
-        /// go. The empty-list case hid this completely, because there were no rows to trap anyone.
-        ///
-        /// Left/right are free on every row (SetNavigation sets only up/down), so pointing them at
-        /// the close button adds an exit WITHOUT touching the game's up/down ordering - a player
-        /// arrowing through mods still moves through mods in the authored order.
-        /// </summary>
-        private static void LinkRowsToEscape(object manager, Selectable escape)
-        {
-            if (escape == null) return;
-
-            Type itemType = AccessTools.TypeByName("TG_ModListItemUI");
-            if (itemType == null) return;
-
-            UnityEngine.Object[] rows = UnityEngine.Object.FindObjectsOfType(itemType);
-            int wired = 0;
-            for (int i = 0; i < rows.Length; i++)
-            {
-                var row = rows[i] as MonoBehaviour;
-                if (row == null || !row.gameObject.activeInHierarchy) continue;
-
-                var button = AccessTools.Property(itemType, "Button")?.GetValue(row, null) as Button;
-                if (button == null) continue;
-
-                Navigation nav = button.navigation;
-                if (nav.mode != Navigation.Mode.Explicit) continue;
-                if (nav.selectOnLeft != null || nav.selectOnRight != null) continue;
-
-                nav.selectOnLeft = escape;
-                nav.selectOnRight = escape;
-                button.navigation = nav;
-                wired++;
-            }
-
-            if (wired > 0)
-                MelonLogger.Msg("[ModMenu] gave " + wired + " mod row(s) a left/right exit to the close button.");
-        }
-
-        /// <summary>Points a dead-end button's up/down at a control that leads somewhere.</summary>
-        private static void LinkUp(Selectable target, Selectable escape)
-        {
-            if (target == null || escape == null) return;
-
-            Navigation nav = target.navigation;
-
-            // Only repair genuine dead ends. If the game ever wires these itself - or a future build
-            // does - leave its graph alone rather than overwriting a working one.
-            if (nav.mode == Navigation.Mode.Explicit
-                && nav.selectOnUp == null && nav.selectOnDown == null
-                && nav.selectOnLeft == null && nav.selectOnRight == null)
-            {
-                nav.selectOnUp = escape;
-                nav.selectOnDown = escape;
-                target.navigation = nav;
-                MelonLogger.Msg("[ModMenu] wired " + target.gameObject.name + " -> " + escape.gameObject.name);
-            }
         }
 
         /// <summary>Reads a Selectable out of a private field on the manager.</summary>

@@ -8,6 +8,7 @@ using HarmonyLib;
 using MelonLoader;
 using UnityAccessibilityLib;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace CoffeeTalkAccess.Brewing
@@ -44,6 +45,87 @@ namespace CoffeeTalkAccess.Brewing
         private static ISpeechOutput Speech => AccessMod.Speech;
 
         private const int GlassCapacity = 3;
+
+        /// <summary>
+        /// Supplies the ONE selection the game never makes on a keyboard, and nothing else.
+        ///
+        /// THE WHOLE BUG, in one line: SelectCocoa's entire body is behind
+        /// `CurrentTypeControllerState == JOYSTICK` (TG_DrinkManager:547). It is the only thing that
+        /// seeds a cursor when the screen opens with an empty glass - SetIngredientsButton:384-387
+        /// calls it on the `glass_value == 0`, `i == 0` branch. On a keyboard nothing is ever
+        /// selected, so the explicit Navigation graph built directly below it (:393-524) is correct
+        /// and UNREACHABLE: navigation moves relative to a current selection, and there is none.
+        /// Arrow keys and Enter are both dead. Reported live 2026-08-11, confirmed with the pad both
+        /// connected and unplugged.
+        ///
+        /// ⚠ WHY A POSTFIX HERE AND NOT A FocusRecovery WHITELIST ENTRY. An earlier fix
+        /// added BREWING to FocusRecovery, which watches for ANY null selection. That opts into
+        /// every null the screen produces - including the one ServeGlassDrink makes deliberately at
+        /// :829 while the state is still BREWING - so it then needed a glass_value guard to avoid
+        /// fighting the serve, plus a scoped finder to stop the scene-wide scan wandering onto the
+        /// cafe underneath. Three pieces of machinery to rescue one moment.
+        ///
+        /// Hooking the entry point instead means we are present for exactly that moment and absent
+        /// for every other: the serve null is never seen, so no guard is needed, and there is no
+        /// scan to scope. The game keeps ownership of the cursor everywhere else - AddIngredient
+        /// re-selects (:662-673), the auto-jump to Brew at three ingredients still fires, and
+        /// CheckPluggedInState still reseeds on a mode flip.
+        ///
+        /// And we call the GAME's OWN SelectAnyInteractableIngredient (:569-582) rather than picking
+        /// a button ourselves. It already prefers the first interactable ingredient and already
+        /// falls back to Brew or Reset when none is - which matters because SetIngredientsButton
+        /// disables every ingredient that cannot legally be a base, so index 0 is often unavailable.
+        /// Reimplementing that was duplicating rules that can drift; calling it cannot.
+        ///
+        /// ⚠ HOOK SetIngredientsButton, NOT SelectCocoa. SelectCocoa looks like the natural target -
+        /// it is the gated call - but it is reached from ONE branch of SetIngredientsButton's first
+        /// loop (:384-387): `glass_value == 0` AND `i == 0` AND index 0 falling through to the
+        /// `else`. An ingredient in `ingredientsDisableList` takes the OTHER branch (:367-370), so on
+        /// a restricted-ingredient day SelectCocoa is never called at all.
+        ///
+        /// That is not an edge case - it is the FIRST BREW OF THE GAME. Drew says "I don't have half
+        /// of my ingredients today" and the screen offers four (Milk, Coffee, Matcha, Cocoa),
+        /// confirmed by an F10 dump inside the live screen: "Nothing focused. 21 controls on screen"
+        /// with the four ingredient buttons wired in a left/right ring. A hook on SelectCocoa
+        /// attached correctly (log 26-8-11_9-31-49: "Applied to: TG_DrinkManager.SelectCocoa") and
+        /// NEVER FIRED. ⚠ "The gated call" is not the same thing as "the call that always runs" -
+        /// verify the CALLER's branch conditions, not just the gate.
+        ///
+        /// SetIngredientsButton runs on every rebuild of the screen, on every path into it, whatever
+        /// the day's ingredients are - so it is where "the screen is now ready and nothing is
+        /// focused" can actually be observed.
+        ///
+        /// Patching the base TG_DrinkManager covers TG_EndlessModeDrinkManager, which inherits it.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TG_DrinkManager), nameof(TG_DrinkManager.SetIngredientsButton))]
+        public static void AfterSetIngredientsButton(TG_DrinkManager __instance)
+        {
+            try
+            {
+                // Only in the brewing screen. SetIngredientsButton also runs during setup and on the
+                // way out, where taking focus would fight whatever owns the screen next.
+                if (AccessMod.ReadControllerState() != "BREWING") return;
+
+                // The game seeded the cursor itself - JOYSTICK mode, or one of its ungated paths
+                // (SelectAnyInteractableIngredient, AddIngredient's re-select). Leave it alone; a
+                // second Select() here is the two-disagreeing-cursors failure already paid for.
+                if (EventSystem.current != null &&
+                    EventSystem.current.currentSelectedGameObject != null) return;
+
+                // ⚠ The GAME's own chooser, not ours. It prefers the first INTERACTABLE ingredient
+                // and falls back to Brew or Reset when none is (:569-582) - which is exactly what a
+                // restricted day needs, and exactly what picking ingredientsButtons[0] ourselves
+                // would get wrong.
+                __instance.SelectAnyInteractableIngredient();
+
+                MelonLogger.Msg("[Brew] supplied the keyboard's missing entry selection.");
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Brew] entry selection threw: " + e.Message);
+            }
+        }
 
         /// <summary>
         /// Announces the outcome of adding an ingredient - including the refusals, which the game
