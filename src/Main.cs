@@ -241,8 +241,11 @@ namespace CoffeeTalkAccess
                 // private), which is the failure mode this list exists to catch: a rename would
                 // leave the arrow keys dead on every screen with an otherwise clean log. It is also
                 // the hook whose HOST was wrong once - see KeyboardNav.AfterControllerUpdate.
-                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit). Both hooks share
-                // this target deliberately; ReportDoublePatches exempts it by name.
+                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit) and PhoneHotkey
+                // (Tab -> smartphone). All three hooks share this target deliberately;
+                // ReportDoublePatches exempts it by name. The three Tab readers are separated by
+                // STATE - MAIN_MENU, MOD_MENU and BREWING/IN_DIALOGUE respectively - so a single
+                // press can only ever match one.
                 { "TG_ControllerInputManager", "ControllerUpdateFunction" },
                 { "Fungus.SayDialog", "Say" },
                 { "Fungus.SayDialog", "SetCharacterName" },
