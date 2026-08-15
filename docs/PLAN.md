@@ -262,6 +262,28 @@ The other half of the gameplay loop.
     parks a FRESH preview synchronously — hence the clear on a **POSTFIX** of `AddIngredient`.
   - Stats are a TOGGLE (`BrewInformationClick` swaps the bars against `brewInfoPanel`), so even
     sighted players do not always see them — a query key matches the game's own model.
+- ✅ **Drink request re-read — BUILT 2026-08-15, untested.** `src/Brewing/RequestPatches.cs`.
+  `R` on `BREWING`/`VIEWING_GLASS` speaks the request pinned beside the glass. A query key for the
+  same reason F9 is one: the balloon is permanently on screen for a sighted player, so the
+  accessible equivalent answers on demand rather than repeating unprompted.
+  - ⚠ **Reads the BALLOON, never the branching rules.** `TG_DialogueManager._ruleList` (installed by
+    `TG_BrewingCommand:26`) is the ANSWER KEY — `CheckDrink` grades the finished drink against it —
+    so speaking it would dictate the exact ingredients and delete the puzzle. `chatBallonBrewingText`
+    is what the customer SAID, which is what is drawn.
+  - One implementation covers both modes: the story writes the last chat line into that field
+    (`GetLastChat`, `TG_DrinkManager:1516-1521`) and `TG_EndlessModeDrinkManager` writes its
+    generated request into the same inherited field (`:451/:463/:513/:525`).
+  - ⚠ Gated to the brewing states because `R` is a LETTER — `INPUT_NAME` has a live `InputField`
+    that must receive it as typing. The function keys above need no such gate.
+- ✅ **Dialog history hotkey — BUILT 2026-08-15, untested.** `src/Dialogue/ChatLogHotkey.cs`.
+  `H` opens the chat log, which `ChatLogPatches` already reads aloud with a full entry cursor; H
+  again closes it, so the key is its own undo.
+  - The log previously had **no keyboard route in at all**: gamepad `Y`, the on-screen button, and
+    nothing in `HandlerKeyboard` (which reads only Submit/Confirm/SmartPhoneToggle/Escape).
+  - ⚠ State list mirrored from `YButtonPressed:1514-1552` rather than invented, *including* its
+    guards: `currentScene != "EndlessModeScene"` (no story log there, and `TG_GameManager` is not
+    the live singleton) and `!comicPanelActive` on `IN_DIALOGUE`. `StartOpenChatLog` then applies its
+    own `ingameButtonInteractable` guard, so the game gets the last word.
 - ❌ **Tooltips — CLOSED, ALREADY COVERED. Do not build.** `TG_ToolTipManager.ShowToolTip`'s ONLY
   caller is `TG_IngredientButton`, and its key `drinkDescription/<name>Name` resolves to the
   ingredient NAME, which `FocusNarrator` already speaks. A hook would duplicate existing speech.

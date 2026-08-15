@@ -23,7 +23,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.3", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.4", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -87,6 +87,19 @@ namespace CoffeeTalkAccess
         // it keeps the per-ingredient preview line short enough to scan a whole row with.
         // F9 is unbound by Coffee Talk, like the three above.
         private const KeyCode StatsKey = KeyCode.F9;
+
+        // R = re-read the customer's drink request while brewing.
+        //
+        // A QUERY key for the same reason F9 is one: the request sits pinned in a chat balloon
+        // beside the glass for the whole brew, so a sighted player re-reads it at will. The player
+        // heard it once, one screen transition ago, and the puzzle turns on its exact wording.
+        //
+        // ⚠ GATED TO THE BREWING SCREENS, unlike the four keys above. Those are function keys and a
+        // backquote - safe to read globally because nothing else wants them. R is a LETTER, and the
+        // name-entry screen has a live InputField that must receive it as typing. Restricting the
+        // key to the two states where a request exists keeps it away from that field entirely.
+        // See Brewing.RequestPatches.
+        private const KeyCode RequestKey = KeyCode.R;
 
         public override void OnInitializeMelon()
         {
@@ -241,10 +254,11 @@ namespace CoffeeTalkAccess
                 // private), which is the failure mode this list exists to catch: a rename would
                 // leave the arrow keys dead on every screen with an otherwise clean log. It is also
                 // the hook whose HOST was wrong once - see KeyboardNav.AfterControllerUpdate.
-                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit) and PhoneBackKey
-                // (Backspace -> back, PHONE_* only). All three share this target deliberately;
-                // ReportDoublePatches exempts it by name. They cannot collide: different keys, and
-                // the two hotkey readers gate on disjoint states.
+                // Also the host for MainMenuHotkeys (Tab -> mods, Escape -> exit), PhoneBackKey
+                // (Backspace -> back, PHONE_* only) and ChatLogHotkey (H -> dialog history, on the
+                // states the game's own Y button opens it from). All four share this target
+                // deliberately; ReportDoublePatches exempts it by name. They cannot collide:
+                // different keys, and the hotkey readers gate on disjoint states.
                 //
                 // ⚠ DO NOT ADD A TAB -> SMARTPHONE HOOK HERE. 0.9.1 did, on the theory that the
                 // game sits in JOYSTICK mode so HandlerKeyboard never runs and never reaches
@@ -457,14 +471,16 @@ namespace CoffeeTalkAccess
                 if (m.DeclaringType?.Name == "TG_DrinkManager" && m.Name == "AddIngredient") continue;
 
                 // TG_ControllerInputManager.ControllerUpdateFunction is the mod's per-frame input
-                // host and carries three deliberate postfixes: KeyboardNav.AfterControllerUpdate
+                // host and carries FOUR deliberate postfixes: KeyboardNav.AfterControllerUpdate
                 // (pumps the directional routers), MainMenuHotkeys.AfterControllerUpdate (reads
-                // Tab/Escape on the main menu) and PhoneBackKey.AfterControllerUpdate (Backspace on
-                // PHONE_* only). All are hosted here for the same load-bearing
+                // Tab/Escape on the main menu), PhoneBackKey.AfterControllerUpdate (Backspace on
+                // PHONE_* only) and ChatLogHotkey.AfterControllerUpdate (H on the dialogue, brewing
+                // and phone states). All are hosted here for the same load-bearing
                 // reason - it runs unconditionally from Update() in BOTH input modes, whereas
                 // HandlerKeyboard runs only in KEYBOARD mode, which a connected pad can suppress
-                // indefinitely. Neither speaks on the frames the other acts: KeyboardNav narrates
-                // nothing itself, and the hotkeys act only on a GetKeyDown edge in MAIN_MENU.
+                // indefinitely. None speaks on the frames the others act: KeyboardNav narrates
+                // nothing itself, the hotkeys act only on a GetKeyDown edge, and their keys are all
+                // distinct.
                 if (m.DeclaringType?.Name == "TG_ControllerInputManager"
                     && m.Name == "ControllerUpdateFunction") continue;
 
@@ -530,6 +546,12 @@ namespace CoffeeTalkAccess
             // written as `if (JOYSTICK) { Select(); }` with no else - so on a keyboard they open
             // with no cursor and cannot be navigated at all. See Menus.FocusRecovery.
             Menus.FocusRecovery.Update();
+            // The brew pad's entry cursor is seeded a beat AFTER the keypress that opened the
+            // screen, not during it. Enter is bound to the input module's Submit action, and Fungus's
+            // dialogue advance and the EventSystem both read that same press on the same frame - so
+            // a cursor placed inline received the player's dialog Enter as a button activation and
+            // silently added coffee. See Brewing.BrewingPatches.EntrySelectionWatcher.
+            Brewing.BrewingPatches.EntrySelectionWatcher.Update();
             // The chat log has no per-row focus for ANY input device - the game scrolls it as a
             // wall of pixels - so the mod supplies an entry cursor over the log data. Stepped from
             // here rather than from a patch on the game's own update, so a fault can never throw
@@ -571,10 +593,32 @@ namespace CoffeeTalkAccess
             {
                 Brewing.StatsPatches.SpeakCurrentStats();
             }
+            else if (Input.GetKeyDown(RequestKey) && IsBrewingScreen())
+            {
+                Brewing.RequestPatches.SpeakCurrentRequest();
+            }
             else if (Input.GetKeyDown(DumpKey))
             {
                 DumpUiState();
             }
+        }
+
+        /// <summary>
+        /// True on the two screens where a drink request exists and R should answer.
+        ///
+        /// BREWING is the ingredient-selection screen the request key is for. VIEWING_GLASS is the
+        /// serve-options screen that follows it, included because the balloon is still up there and
+        /// "did this actually match what they asked for?" is the same question, asked one moment
+        /// later - refusing it there would be an arbitrary edge.
+        ///
+        /// ⚠ Everything else is excluded so a plain letter key cannot shadow typing. The name-entry
+        /// screen (INPUT_NAME) has a live InputField, and the mod must never eat a character the
+        /// player is trying to type into it.
+        /// </summary>
+        private static bool IsBrewingScreen()
+        {
+            string state = ReadControllerState();
+            return state == "BREWING" || state == "VIEWING_GLASS";
         }
 
         /// <summary>

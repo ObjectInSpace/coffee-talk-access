@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.3
+Version 0.9.4
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,33 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.3
+WHAT IS NEW IN 0.9.4
+
+  - H opens the conversation history from anywhere in the cafe, and H closes
+    it again. Until now that screen could only be opened with a gamepad's Y
+    button or by clicking it, so on a keyboard there was no way in at all -
+    even though the mod could already read it. Up and down move through the
+    conversation a line at a time, and it tells you when you reach either end.
+
+  - R reads the customer's request back to you while you are brewing. Their
+    order stays on screen beside the glass for the whole brew, so a sighted
+    player can glance at it whenever they like; by ear you heard it once,
+    before the screen changed. R repeats it as often as you want, and also
+    works on the serve screen afterwards.
+
+  - Pressing Enter to finish a conversation no longer drops coffee into the
+    glass. The keypress that closed the dialogue was also reaching the
+    ingredient the mod had just focused, so a brew could begin with an
+    ingredient you never chose.
+
+  - Endless mode can be navigated with the keyboard. Choosing between the
+    game modes, and the screen at the end of a run, had no starting cursor
+    on a keyboard, so the arrow keys had nothing to move and both screens
+    were silent. This is the same gap that affected the brewing screen in
+    0.9.1 and the serve options in 0.9.3, in the last place it was left.
+
+
+WHAT WAS NEW IN 0.9.3
 
   - The serve options work on a keyboard. After brewing a drink, "serve it",
     "trash it" and "latte art" could not be reached at all: the game only
@@ -231,6 +257,12 @@ KEYS THE MOD ADDS
                        left alone on purpose, because its lines disappear on a
                        timer and there is no way to go back for them. The repeat
                        key above also still works while reading is off.
+  H                    Open the conversation history, and press it again to
+                       close. Works during conversations, while brewing, and
+                       with the phone open. The game itself offers this only on
+                       a gamepad's Y button. Up and down move a line at a time.
+  R                    While brewing, repeat what the customer asked for. Also
+                       works on the serve screen after the drink is made.
   F8                 Speech test. Speaks a test line so you can check the
                        speech channel is alive.
   F9                   On the brewing screen, speak the current drink's stats.
@@ -347,7 +379,12 @@ KNOWN LIMITS
   - No one has finished a whole playthrough with this mod yet. The early game
     is well tested; the later it gets, the less it has been exercised.
   - These screens have never run in play and may have rough edges: the chat
-    log and the ending epilogues. Reports on them are genuinely useful.
+    log and the ending epilogues. Reports on them are genuinely useful. The
+    chat log is newly reachable from the keyboard in 0.9.4 (press H), so it
+    is the most likely place to find rough edges in this release.
+  - Endless mode's keyboard navigation is new in 0.9.4 and has not been
+    played. The mode select and end-of-run screens should now respond to the
+    arrow keys and announce themselves.
 
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
@@ -357,7 +394,6 @@ KNOWN LIMITS
   - On the profile picker, deleting a profile needs a gamepad (X button). The
     game provides no keyboard key for it, and the mod does not invent one for
     an action that cannot be undone.
-  - The chat log opens with the gamepad Y button only.
   - The Steam Workshop mod manager screen is announced but has not been tested.
   - Artwork in the gallery and comics is not described.
 

@@ -47,6 +47,165 @@ namespace CoffeeTalkAccess.Brewing
         private const int GlassCapacity = 3;
 
         /// <summary>
+        /// Defers the entry selection to a LATER FRAME, because seeding it on the current one hands
+        /// the keypress that opened the screen straight to the button we just selected.
+        ///
+        /// ⚠ THE BUG THIS EXISTS FOR: "when I press enter to advance the dialog, it automatically
+        /// selects coffee as the first ingredient." One Enter, two consumers, one frame:
+        ///
+        ///   Key.Return is bound to the input module's Submit action
+        ///   (InputModuleActionAdapter:60). On the frame it goes down:
+        ///     1. Fungus's DialogInput.Update sees SubmitAction.WasPressed and advances the line
+        ///        (DialogInput:83-86). If that was the last line before a brew, the advance runs
+        ///        ToggleBrewCanvas -> ChangeGameState(BREW_MODE) -> BrewModeState ->
+        ///        ResetIngredients (TG_GameManager:356-362) SYNCHRONOUSLY, so our postfix seeds the
+        ///        cursor onto the first ingredient while the key is still down.
+        ///     2. InControlInputModule, later in the same frame, dispatches its own submit event to
+        ///        whatever the EventSystem now has selected - which is the ingredient we just put
+        ///        there. Coffee goes in the glass.
+        ///
+        /// The dialog and the input module read the SAME action independently; neither consumes it
+        /// on the other's behalf, so there is no "mark it handled" to call. Waiting a frame is what
+        /// separates them: by the next Update the press is no longer WasPressed, and the seeded
+        /// button receives nothing.
+        ///
+        /// ⚠ ONE FRAME IS NOT ENOUGH, AND THE REASON IS THE KEY BEING HELD. A player advancing
+        /// dialogue holds Enter fractionally longer than a frame, and InControl reports Submit as
+        /// pressed for as long as it is physically down. WasPressed is an edge, but the edge lands
+        /// on whichever frame the module happens to sample - so a seed placed one frame later can
+        /// still meet a press that has not yet been released. We therefore wait for Submit to be
+        /// genuinely RELEASED (or a short timeout, so a stuck or unreadable action cannot strand the
+        /// screen with no cursor at all - the silent-stop failure this whole class exists to
+        /// prevent).
+        ///
+        /// ⚠ WHY NOT MOVE THE HOOK. ResetIngredients remains exactly the right SIGNAL - see
+        /// AfterBrewingEntry for the two failed attempts at inferring brewing entry from a shared
+        /// method. The signal is correct; only the TIMING of acting on it was wrong. So the hook
+        /// stays and just arms this instead of selecting inline.
+        /// </summary>
+        internal static class EntrySelectionWatcher
+        {
+            /// <summary>
+            /// How long we will wait for Submit to come back up before seeding anyway.
+            ///
+            /// Generously longer than any deliberate keypress, and short enough that a player who
+            /// arrives on the brew pad by some other route (a mouse click, a gamepad) never notices
+            /// a wait. The timeout is the important half: if the action cannot be read at all, we
+            /// MUST still end up with a cursor, because a brew screen with no selection is
+            /// unnavigable by keyboard and silent with it.
+            /// </summary>
+            private const float MaxWaitSeconds = 0.5f;
+
+            private static TG_DrinkManager _pending;
+            private static float _armedAt;
+
+            /// <summary>Requests an entry selection as soon as the opening keypress is over.</summary>
+            internal static void Arm(TG_DrinkManager mgr)
+            {
+                _pending = mgr;
+                _armedAt = Time.realtimeSinceStartup;
+            }
+
+            /// <summary>Abandons a pending seed - the screen changed out from under it.</summary>
+            internal static void Cancel()
+            {
+                _pending = null;
+            }
+
+            internal static void Update()
+            {
+                if (_pending == null) return;
+
+                try
+                {
+                    // ⚠ RE-CHECK THE STATE, DO NOT TRUST THE ARM. A deferred action is a promise
+                    // about a screen that may no longer be there: the player can open the phone or
+                    // pause within the wait, and selecting an ingredient then would drag focus back
+                    // onto a screen they have left. This is the cost of deferring, and re-reading
+                    // the live state is what pays it.
+                    if (AccessMod.ReadControllerState() != "BREWING")
+                    {
+                        MelonLogger.Msg("[Brew] entry selection abandoned: no longer BREWING.");
+                        _pending = null;
+                        return;
+                    }
+
+                    bool timedOut = Time.realtimeSinceStartup - _armedAt >= MaxWaitSeconds;
+                    if (!timedOut && SubmitHeld())
+                        return;
+
+                    TG_DrinkManager mgr = _pending;
+                    _pending = null;
+
+                    // The player may have taken a cursor themselves during the wait (the mouse
+                    // hovering an ingredient does exactly this). Rule 1: never move a live selection.
+                    GameObject sel = EventSystem.current != null
+                        ? EventSystem.current.currentSelectedGameObject
+                        : null;
+                    if (sel != null && sel.activeInHierarchy && IsBrewingControl(mgr, sel))
+                    {
+                        MelonLogger.Msg("[Brew] entry selection unnecessary: "
+                            + sel.name + " already selected.");
+                        return;
+                    }
+
+                    mgr.SelectAnyInteractableIngredient();
+                    MelonLogger.Msg("[Brew] supplied the keyboard's missing entry selection"
+                        + (timedOut ? " (submit never released; seeded on timeout)." : "."));
+                }
+                catch (Exception e)
+                {
+                    _pending = null;
+                    MelonLogger.Warning("[Brew] deferred entry selection threw: " + e.Message);
+                }
+            }
+
+            /// <summary>
+            /// True while the Submit action is physically down.
+            ///
+            /// Reads the GAME's OWN action off the live input module rather than
+            /// Input.GetKey(KeyCode.Return), so this honours every binding Submit actually has -
+            /// Space, Return, PadEnter and the gamepad's Action1 (InputModuleActionAdapter:57-61) -
+            /// instead of hardcoding one of them. A player who advances dialogue with Space hits the
+            /// identical bug, and a KeyCode check would have fixed only Enter.
+            ///
+            /// Bound by reflection throughout: InControlInputModule and PlayerAction are library
+            /// types this project does not reference. Returns FALSE when anything cannot be read,
+            /// which means "seed now" - the safe direction, since the timeout would do it anyway.
+            /// </summary>
+            private static bool SubmitHeld()
+            {
+                try
+                {
+                    Type mgrType = AccessTools.TypeByName("TG_ControllerInputManager");
+                    if (mgrType == null) return false;
+
+                    Type singleton = AccessTools.TypeByName("TG_GenericSingelton`1");
+                    if (singleton == null) return false;
+
+                    Type closed = singleton.MakeGenericType(mgrType);
+                    object instance = AccessTools.Property(closed, "Instance")?.GetValue(null)
+                                      ?? AccessTools.Field(closed, "Instance")?.GetValue(null);
+                    if (instance == null) return false;
+
+                    object module = AccessTools.Field(mgrType, "inControlInputModule")?.GetValue(instance);
+                    if (module == null) return false;
+
+                    object submit = AccessTools.Property(module.GetType(), "SubmitAction")?.GetValue(module)
+                                    ?? AccessTools.Field(module.GetType(), "SubmitAction")?.GetValue(module);
+                    if (submit == null) return false;
+
+                    object pressed = AccessTools.Property(submit.GetType(), "IsPressed")?.GetValue(submit);
+                    return pressed is bool && (bool)pressed;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
         /// Supplies the ONE selection the game never makes on a keyboard, and nothing else.
         ///
         /// THE WHOLE BUG, in one line: SelectCocoa's entire body is behind
@@ -141,6 +300,9 @@ namespace CoffeeTalkAccess.Brewing
                 if (stateNow != "BREWING")
                 {
                     MelonLogger.Msg("[Brew] entry hook declined: not BREWING.");
+                    // A pending seed from an earlier entry must not survive into a screen that is
+                    // tearing down - see EntrySelectionWatcher.Update's state re-check.
+                    EntrySelectionWatcher.Cancel();
                     return;
                 }
 
@@ -159,13 +321,12 @@ namespace CoffeeTalkAccess.Brewing
                     return;
                 }
 
-                // ⚠ The GAME's own chooser, not ours. It prefers the first INTERACTABLE ingredient
-                // and falls back to Brew or Reset when none is (:569-582) - which is exactly what a
-                // restricted day needs, and exactly what picking ingredientsButtons[0] ourselves
-                // would get wrong.
-                __instance.SelectAnyInteractableIngredient();
-
-                MelonLogger.Msg("[Brew] supplied the keyboard's missing entry selection.");
+                // ⚠ ARMED, NOT SELECTED. Selecting HERE hands the Enter that opened this screen to
+                // the button we just selected - the game adds coffee before the player has heard the
+                // screen exists. The seed itself (still the game's own chooser,
+                // SelectAnyInteractableIngredient) happens once the keypress is over. See
+                // EntrySelectionWatcher for the full mechanism.
+                EntrySelectionWatcher.Arm(__instance);
             }
             catch (Exception e)
             {

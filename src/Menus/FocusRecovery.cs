@@ -156,6 +156,40 @@ namespace CoffeeTalkAccess.Menus
                 // selection - which is what makes Enter, Escape and gamepad X act on the right card.
                 case "SELECT_PROFILE":
                 case "MOD_MENU":
+                // ⚠ ENDLESS MODE, AND IT IS THIS CLASS'S OWN BUG CLASS IN A SCENE THE AUDIT NEVER
+                // WALKED. Reported live as "arrow keys don't work in the endless mode".
+                //
+                // The cause is NOT the same as the other screens here, and the difference matters
+                // for anyone tempted to fix it in KeyboardNav instead. The arrow keys reach
+                // HandlerControllerPress correctly; the problem is that its directional routers
+                // handle endless mode ZERO times. Measured over the decompile - UpButtonPressed,
+                // DownButtonPressed, LeftButtonPressed, RightButtonPressed, their four Hold twins,
+                // and AButtonPressed/BButtonPressed contain no reference to ANY of the four
+                // ENDLESS_* states. The scene is EventSystem-driven instead: TG_EndlessModeUIManager
+                // .SetSelectModeNavigation (:162-234) builds an explicit left/right/down graph over
+                // the mode buttons, exactly like the brew pad does.
+                //
+                // ⚠ SO PUMPING THE ROUTERS HARDER WOULD ACHIEVE NOTHING - there is no router to
+                // reach. What is missing is the SELECTION the graph moves relative to, and every
+                // site that would seed it is behind the usual gate with no else branch:
+                //     TG_EndlessModeManager.InitEndlessModeUI:157        (entering the mode)
+                //     TG_EndlessModeManager.StartSelectModeEndlessMode:197 (returning to it)
+                //     TG_EndlessModeUIManager.SetResult:101              (the run-over screen)
+                //     TG_EndlessModeUIManager:228                        (back-to-menu, already in
+                //                                                         this class's audit list)
+                // On a keyboard nothing is ever selected, the explicit graph is correct and
+                // UNREACHABLE, and the whole scene is unnavigable - the identical shape to the brew
+                // pad's entry bug, in a scene the original audit did not cover.
+                //
+                // ENDLESS_PAUSE_MENU is deliberately NOT listed. It routes through TG_PopUpManager,
+                // whose SetActiveDelay coroutine OVERWRITES currentState to POP_UP_CONFIRMATION
+                // (TG_PopUpManager:149) - so by the time the dialog is up, the popup path above
+                // already owns it. Adding it here would be dead code at best.
+                //
+                // ENDLESS_DIALOGUE is likewise absent: it is story text with no controls to move
+                // between, and rule 3 says we never recover on a screen with no candidates.
+                case "ENDLESS_START_MENU":
+                case "ENDLESS_RESULT":
                     return true;
 
                 // ⚠ BREWING IS EXCLUDED, AND THE REASON IS NOT THE ONE THAT USED TO BE WRITTEN HERE.
@@ -675,6 +709,23 @@ namespace CoffeeTalkAccess.Menus
                 // PREFERENCE with the logged fallback for the reason spelled out above.
                 scope = FindPanelScope("TG_ProfileUIManager", "profileSelectCanvasPanel");
             }
+            else if (state == "ENDLESS_START_MENU" || state == "ENDLESS_RESULT")
+            {
+                // ⚠ SCOPED, for the phone-over-cafe reason. The endless scene keeps the cafe and
+                // the BREW PAD live underneath these panels - TG_EndlessModeManager.ConfirmEndRun
+                // calls drinkManager.ReenableCanvasEndless() - so a scene-wide scan would reliably
+                // return an ingredient button and announce it under a mode-select label. That is the
+                // exact failure logged in 26-8-10_18-17-43 for the phone, and there is no reason to
+                // rediscover it here.
+                //
+                // ⚠ The two states use DIFFERENT panels, so the scope has to follow the state rather
+                // than being read once from the manager: `otptionsGameModePanel` (the game's own
+                // typo, verified at TG_EndlessModeUIManager:35 - do NOT "correct" it) holds the mode
+                // buttons, and `resultPanel` (:48) the run-over screen. Pointing both at one panel
+                // would leave the other unscoped, i.e. back to scanning the cafe.
+                scope = FindPanelScope("TG_EndlessModeUIManager",
+                    state == "ENDLESS_RESULT" ? "resultPanel" : "otptionsGameModePanel");
+            }
             else if (state == "MOD_MENU")
             {
                 // Retail-only, and bound entirely by STRING: TG_ModManagerUI does not exist in the
@@ -717,9 +768,18 @@ namespace CoffeeTalkAccess.Menus
             // Returning null here means recovery does nothing this frame and tries again on the
             // next, which is correct: the phone's own buttons become interactable when its 0.6 s
             // tween completes, and the watcher-based announcement now waits for the same moment.
-            if (fallback != null && state != null && state.StartsWith("PHONE"))
+            //
+            // ⚠ THE ENDLESS PANELS ARE THE SAME SHAPE and stand down for the same reason: they are
+            // drawn over a cafe whose brew pad is explicitly re-enabled behind them
+            // (TG_EndlessModeManager.ConfirmEndRun -> drinkManager.ReenableCanvasEndless), so the
+            // best outside candidate there is an INGREDIENT. Both panels are also toggled with
+            // SetActive and appear on a delay, so "nothing selectable yet" is a normal transient
+            // state that resolves on a later frame - exactly the phone's situation, and the same
+            // answer: wait rather than grab.
+            if (fallback != null && state != null
+                && (state.StartsWith("PHONE") || state.StartsWith("ENDLESS")))
             {
-                MelonLogger.Msg("[Focus] nothing selectable inside the phone yet on " + state
+                MelonLogger.Msg("[Focus] nothing selectable inside the panel yet on " + state
                     + " (best outside candidate was " + fallback.gameObject.name
                     + ") - standing down rather than selecting the cafe behind it.");
                 return null;
