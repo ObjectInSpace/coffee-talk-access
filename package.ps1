@@ -58,6 +58,11 @@ Copy-Required (Join-Path $release 'UnityAccessibilityLib.dll') (Join-Path $stagi
 Copy-Required (Join-Path $root 'libs\UniversalSpeech.dll')      (Join-Path $staging 'GameRoot') 'Native UniversalSpeech.dll'
 Copy-Required (Join-Path $root 'libs\nvdaControllerClient.dll') (Join-Path $staging 'GameRoot') 'Native nvdaControllerClient.dll'
 Copy-Required (Join-Path $root 'package\README.txt')            $staging 'README.txt'
+# LGPLv3 requires the license text to travel with the binaries, and it is the
+# GPLv3 text plus the Lesser supplement -- both files, or the license is
+# incomplete.
+Copy-Required (Join-Path $root 'COPYING')                       $staging 'COPYING.txt'
+Copy-Required (Join-Path $root 'COPYING.LESSER')                $staging 'COPYING.LESSER.txt'
 
 # The native DLLs must be 32-bit or they throw BadImageFormatException at the
 # first P/Invoke -- i.e. at the first spoken word, after everything else looks

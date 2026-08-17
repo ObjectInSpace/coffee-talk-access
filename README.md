@@ -96,8 +96,20 @@ and is not affiliated with or endorsed by them.
 
 ## License
 
-GNU General Public License v3.0 or later — see [LICENSE](LICENSE).
+GNU Lesser General Public License v3.0 or later — see [COPYING.LESSER](COPYING.LESSER) and
+[COPYING](COPYING). LGPLv3 is written as a set of additional permissions on top of GPLv3, so
+both texts together form the license.
 
-This covers the mod's own source in `src/`. It does not extend to the third-party binaries in
-`libs/` (UniversalSpeech and the NVDA controller client, which carry their own licenses), and
-not to Coffee Talk itself, whose code and assets belong to Toge Productions.
+This covers the mod's own source in `src/`. It does not extend to Coffee Talk itself, whose
+code and assets belong to Toge Productions.
+
+### Third-party components
+
+| Component | Author | License |
+| --- | --- | --- |
+| [UnityAccessibilityLib](https://www.nuget.org/packages/UnityAccessibilityLib) | LordLuceus | MIT |
+| [UniversalSpeech](https://github.com/qtnc/UniversalSpeech) (`libs/UniversalSpeech.dll`) | Quentin Cosendey | MIT |
+| [NVDA Controller Client](https://github.com/nvaccess/nvda/tree/master/extras/controllerClient) (`libs/nvdaControllerClient.dll`) | NV Access | LGPL v2.1 |
+
+The two binaries in `libs/` are redistributed unmodified under their own terms. Copies of the
+MIT and LGPL v2.1 texts ship with their respective upstream projects at the links above.
