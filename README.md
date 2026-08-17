@@ -6,39 +6,7 @@ language picker, name entry, the opening cutscene, story dialogue and the brewin
 through NVDA, JAWS, SAPI or a braille display, and it supplies keyboard navigation for menus
 that the game otherwise only lets you drive with a gamepad.
 
-⚠ **Full-game users need v0.7.0 or later** (current release: **v0.8.0**). v0.6.0 was compiled
-against the demo and hard-binds `TG_NameKeys.playerNameInput`, which the full game changed from a
-public `InputField` to a private `TG_CustomInputField` — so it throws on the name entry screen there.
-
 Installation instructions for players are in [package/README.txt](package/README.txt).
-
-## Status
-
-This project distinguishes **built** from **confirmed working**, because it has repeatedly
-found bugs in code that was already marked done — three screens audited, thirteen defects, and
-not one of them a missing hook. The bugs were in the words, not the wiring. So the list below is
-graded by what has actually FIRED in a live retail run, not by what compiles.
-
-- **Confirmed firing on the RETAIL build** (v0.8.0, logs `26-8-10_17-39-3` … `18-17-43`) — story
-  dialogue (`[Speak/Say]`), brewing (ingredients, per-ingredient stat previews, the glass, the
-  served drink), the profile picker, the language picker, name entry, the opening cutscene and
-  press-any prompts, pop-ups, the smartphone, the music app (track/artist/album), the drink
-  recipes app (per-category counts with locked totals), the gallery and comics, achievements, and
-  the newspaper archive on the phone (date, day number, headline, paragraph count and keys), the
-  save/load calendar with its confirmation dialogs, and social media (friend list **and** the
-  detail pane, e.g. `Gala. Birthday: 13 September. 2 more things to learn`).
-- **Built and bound, but NEVER executed a line in play** — the chat log, the morning-paper reader
-  (`TG_NewspaperManager`, a different screen from the phone archive), the ending epilogues, and
-  latte art. These are the honest gaps.
-- **Verified offline on both builds** — 46/46 types, 102/102 string-bound members and 64/64
-  Harmony targets resolve. That proves the hooks *bind*; it says nothing about whether they *say
-  the right thing*, which is where this project keeps finding its bugs.
-
-The gate is now **a complete playthrough**: the early game is well exercised, and the further in
-you go the thinner the evidence gets. Two tools automate what used to need a live run —
-`tools/verify-hook-targets.ps1` (string-bound lookups, auto-detects which build it is auditing)
-and `tools/verify-patch-targets.ps1` (reads `[HarmonyPatch]` attributes out of the compiled DLL,
-so it cannot drift from the code).
 
 ## Building
 
@@ -76,6 +44,9 @@ because a 64-bit build fails at the first spoken word and nowhere earlier.
   a live run.
 - `package/` — the player-facing install guide.
 - `libs/` — the x86 native speech DLLs.
+- `tools/` — `verify-hook-targets.ps1` checks the string-bound lookups still resolve against an
+  install; `verify-patch-targets.ps1` reads `[HarmonyPatch]` attributes out of the compiled DLL,
+  so it cannot drift from the code.
 - `.retired/` — approaches that were tried and removed, kept so they are not retried.
 
 `decompiled/` is not tracked: it holds decompiled game code, which belongs to Toge Productions.
