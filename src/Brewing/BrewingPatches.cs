@@ -275,6 +275,19 @@ namespace CoffeeTalkAccess.Brewing
         /// infer it.
         ///
         /// Patching the base TG_DrinkManager covers TG_EndlessModeDrinkManager, which inherits it.
+        ///
+        /// ⚠ BUT INHERITING THE HOOK IS NOT THE SAME AS THE HOOK WORKING THERE. In endless mode this
+        /// fires and then loses the race: TG_EndlessModeDrinkManager.ToggleBrewCanvas sets BREWING
+        /// and calls ResetIngredients (arming us), and the VERY NEXT STATEMENT in
+        /// TG_EndlessModeManager.DoSelectGameMode:262 sets TWEENING - so the watcher's state
+        /// re-check abandons the seed a moment later. Log 26-8-17_23-30, exactly 239 ms apart:
+        ///     23:30:15.139  entry hook: state=BREWING, selection=ChallengeModeButton
+        ///     23:30:15.378  entry selection abandoned: no longer BREWING.
+        /// The state only returns to BREWING in the SECOND loading callback (:275), and nothing
+        /// calls ResetIngredients again there, so nothing re-arms. AfterStateChanged below covers
+        /// endless mode instead, on the state transition rather than on this call; THIS hook is
+        /// left alone because it is exactly right for story mode, and is scoped away from endless
+        /// mode by that method's scene check rather than by anything here.
         /// </summary>
         [HarmonyPostfix]
         [HarmonyPatch(typeof(TG_DrinkManager), nameof(TG_DrinkManager.ResetIngredients))]
@@ -334,6 +347,81 @@ namespace CoffeeTalkAccess.Brewing
         }
 
         /// <summary>
+        /// Seeds the brew pad's selection in ENDLESS MODE, every time that screen becomes live.
+        ///
+        /// THE GAP, measured rather than inferred (logs 26-8-17_23-30 and _23-42). Endless mode
+        /// duplicates the story manager's screen logic instead of sharing it, and its copy never
+        /// leaves the brew pad in a state the shared ResetIngredients hook above can act on:
+        ///
+        ///  - ON ENTRY, ToggleBrewCanvas sets BREWING and calls ResetIngredients (arming the entry
+        ///    watcher), and the NEXT LINE of DoSelectGameMode:262 overwrites the state with
+        ///    TWEENING. The watcher re-checks the state, correctly refuses to seed a screen that is
+        ///    no longer BREWING, and the arm dies 239 ms after it was made.
+        ///  - AFTER SERVING, ResetIngredients runs during teardown while the state is TWEENING, so
+        ///    the hook declines ("entry hook: state=TWEENING, selection=&lt;null&gt;"). BREWING comes
+        ///    back LATER, from an animation-completion callback, and nothing calls ResetIngredients
+        ///    at that point - so the next customer's brew pad has no cursor at all.
+        ///
+        /// ⚠ SO THE SIGNAL IS THE STATE ITSELF, NOT ANY ONE CALL SITE. Three different places
+        /// restore BREWING after a drink (TG_EndlessModeDrinkManager:142 trash, :184 canvas toggle,
+        /// :278 OnComplateResultDrinkFreeMode), one of them private and one inside a lambda, and
+        /// chasing them individually is how this bug came back twice. ChangeStateController is the
+        /// single funnel every one of them goes through, so hooking it covers entry, serving,
+        /// trashing, and any path a future build adds.
+        ///
+        /// ⚠ AN EARLIER VERSION HOOKED ChangeInGameState(ENDLESS_MODE_INGAME) INSTEAD, and it fixed
+        /// entry only - it fires before the post-serve return and so never saw the second case. It
+        /// also needed a guard against the serve-options screen, which reaches that same state, and
+        /// writing that guard as "require BREWING" broke entry outright because ChangeInGameState
+        /// runs one line BEFORE ChangeStateController(BREWING). Hooking the state directly removes
+        /// both problems: there is nothing to disambiguate, because BREWING means the brew pad.
+        ///
+        /// We ARM rather than select, exactly as the story-mode hook does: the keypress that served
+        /// the last drink must not be handed straight to an ingredient.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TG_ControllerInputManager),
+            nameof(TG_ControllerInputManager.ChangeStateController))]
+        public static void AfterStateChanged(TG_ControllerInputManager.State currentStateValue)
+        {
+            try
+            {
+                if (currentStateValue != TG_ControllerInputManager.State.BREWING) return;
+
+                // ⚠ ENDLESS MODE ONLY. Story mode reaches the brew pad through BrewModeState, whose
+                // final ResetIngredients is a precise "the screen has just begun" signal that the
+                // hook above already uses correctly. Arming here too would double up on a path that
+                // is working, and this hook is deliberately blunter - it fires on any transition to
+                // BREWING, which is right for a mode that has no such signal and wrong for one that
+                // does.
+                if (TG_Static.currentScene != "EndlessModeScene") return;
+
+                TG_EndlessModeManager mgr = TG_GenericSingelton<TG_EndlessModeManager>.Instance;
+                if (mgr == null || mgr.drinkManager == null) return;
+
+                // Rule 1: never move a live selection that is already on this screen. After serving,
+                // the cursor is left on SERVE IT - a control that IsBrewingControl recognises - but
+                // that button is torn down with the serve options, so the activeInHierarchy check is
+                // what stops a dead control from being mistaken for a healthy cursor.
+                GameObject sel = EventSystem.current != null
+                    ? EventSystem.current.currentSelectedGameObject
+                    : null;
+                if (sel != null && sel.activeInHierarchy && IsBrewingControl(mgr.drinkManager, sel))
+                {
+                    MelonLogger.Msg("[Brew] endless brew pad: cursor already here (" + sel.name + ").");
+                    return;
+                }
+
+                MelonLogger.Msg("[Brew] endless brew pad live: arming ingredient selection.");
+                EntrySelectionWatcher.Arm(mgr.drinkManager);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Brew] endless state hook threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
         /// Supplies the keyboard's missing selection on the SERVE OPTIONS screen - serve it, trash
         /// it, and (with milk) latte art.
         ///
@@ -368,38 +456,82 @@ namespace CoffeeTalkAccess.Brewing
 
                 TG_DrinkManager mgr = AccessTools.Field(typeof(TG_GameManager), "drinkManager")
                     ?.GetValue(__instance) as TG_DrinkManager;
-                if (mgr == null) return;
-
-                // The game seeded it itself (JOYSTICK), or the player is already on one of these
-                // buttons. Leave it alone - a second Select() here is the disagreeing-cursor trap.
-                GameObject sel = EventSystem.current != null
-                    ? EventSystem.current.currentSelectedGameObject
-                    : null;
-                if (sel != null && sel.activeInHierarchy && IsBrewingControl(mgr, sel))
-                {
-                    MelonLogger.Msg("[Brew] serve options: game already seeded the cursor.");
-                    return;
-                }
-
-                // ⚠ PICK A LIVE BUTTON, NOT A FIXED ONE. latteArtButton is only shown when the drink
-                // contains milk (:1256) and trashItButton is toggled too (:966-970), so hardcoding
-                // serveGlassButton would be right only by luck and IsUsable is what keeps this
-                // honest. Serve is preferred because it is the game's OWN choice on a pad.
-                Selectable target = FirstUsable(mgr.serveGlassButton, mgr.trashItButton, mgr.latteArtButton);
-                if (target == null)
-                {
-                    MelonLogger.Msg("[Brew] serve options: no usable button to focus.");
-                    return;
-                }
-
-                target.Select();
-                MelonLogger.Msg("[Brew] supplied the keyboard's missing serve-options selection: "
-                    + target.gameObject.name);
+                SeedServeOptions(mgr);
             }
             catch (Exception e)
             {
                 MelonLogger.Warning("[Brew] entry selection threw: " + e.Message);
             }
+        }
+
+        /// <summary>
+        /// The same fix for ENDLESS MODE, which has its OWN copy of the serve-options screen.
+        ///
+        /// ⚠ TG_EndlessModeManager.ServeOptionsBrewModeState IS A SEPARATE METHOD ON A SEPARATE
+        /// CLASS - not an override, not inherited - so the TG_GameManager patch above never touches
+        /// it. It carries the identical bug, verbatim (:535-543):
+        ///     ChangeStateController(VIEWING_GLASS);
+        ///     if (CurrentTypeControllerState == JOYSTICK) drinkManager.SelectServeGlassButton();
+        /// with no else branch, so on a keyboard nothing is selected and "serve it", "trash it" and
+        /// "latte art" cannot be reached. Reported 2026-08-17 immediately after the endless brew pad
+        /// itself was fixed - the same gap, one screen further along.
+        ///
+        /// ⚠ THE LESSON THAT KEEPS RECURRING IN THIS FILE: endless mode duplicates the story
+        /// manager's screen logic rather than sharing it, so a fix aimed at TG_GameManager covers
+        /// exactly half the game. When something here is found broken in story mode, check whether
+        /// TG_EndlessModeManager has its own copy before assuming one patch is enough.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(TG_EndlessModeManager), "ServeOptionsBrewModeState")]
+        public static void AfterEndlessServeOptions(TG_EndlessModeManager __instance)
+        {
+            try
+            {
+                if (__instance == null) return;
+                SeedServeOptions(__instance.drinkManager);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("[Brew] endless serve options threw: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Gives the serve-options screen the selection the game only ever supplies on a gamepad.
+        ///
+        /// Shared by the story and endless hooks so the two modes cannot drift: the screen is the
+        /// same screen, and the only thing that differs is which manager owns the drink manager.
+        /// </summary>
+        private static void SeedServeOptions(TG_DrinkManager mgr)
+        {
+            if (mgr == null) return;
+
+            // The game seeded it itself (JOYSTICK), or the player is already on one of these
+            // buttons. Leave it alone - a second Select() here is the disagreeing-cursor trap.
+            GameObject sel = EventSystem.current != null
+                ? EventSystem.current.currentSelectedGameObject
+                : null;
+            if (sel != null && sel.activeInHierarchy && IsBrewingControl(mgr, sel))
+            {
+                MelonLogger.Msg("[Brew] serve options: game already seeded the cursor.");
+                return;
+            }
+
+            // ⚠ PICK A LIVE BUTTON, NOT A FIXED ONE. latteArtButton is only shown when the drink
+            // contains milk (:1256) and trashItButton is toggled too (:966-970) - and in endless
+            // mode SetUpFreeBrewMode hides trashItButton outright - so hardcoding serveGlassButton
+            // would be right only by luck and IsUsable is what keeps this honest. Serve is preferred
+            // because it is the game's OWN choice on a pad.
+            Selectable target = FirstUsable(mgr.serveGlassButton, mgr.trashItButton, mgr.latteArtButton);
+            if (target == null)
+            {
+                MelonLogger.Msg("[Brew] serve options: no usable button to focus.");
+                return;
+            }
+
+            target.Select();
+            MelonLogger.Msg("[Brew] supplied the keyboard's missing serve-options selection: "
+                + target.gameObject.name);
         }
 
         /// <summary>

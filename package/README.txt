@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.5
+Version 0.9.6
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,20 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.5
+WHAT IS NEW IN 0.9.6
+
+  - Endless mode's brewing screen works with the keyboard. The ingredients
+    never took focus when a run started, so the arrow keys had nothing to
+    move; and once that was fixed, the screen went quiet again after the
+    first drink. Both are fixed, for serving and for trashing a drink.
+
+  - Endless mode's serve options work with the keyboard. "Serve it", "trash
+    it" and "latte art" could not be reached there at all. Endless mode has
+    its own copy of that screen, with the same gap the story mode's had in
+    0.9.3, so the earlier fix never applied to it.
+
+
+WHAT WAS NEW IN 0.9.5
 
   - Latte art answers the keyboard. Enter serves the drink (and it counts as
     having latte art), Backspace goes back without serving, and the four
@@ -406,9 +419,10 @@ KNOWN LIMITS
     log and the ending epilogues. Reports on them are genuinely useful. The
     chat log is newly reachable from the keyboard in 0.9.4 (press H), so it
     is the most likely place to find rough edges in this release.
-  - Endless mode's keyboard navigation is new in 0.9.4 and has not been
-    played. The mode select and end-of-run screens should now respond to the
-    arrow keys and announce themselves.
+  - Endless mode's keyboard navigation arrived in 0.9.4 and its brewing
+    screens were fixed in 0.9.6. Mode select, the brew pad, the serve options
+    and the end-of-run screen have all been played through on a keyboard now.
+    The end-of-run screen has had the least exercise of those.
 
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
