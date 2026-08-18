@@ -24,7 +24,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.4", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.5", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess
@@ -58,13 +58,8 @@ namespace CoffeeTalkAccess
         // KeyboardNav does neither: it adds no bindings and never touches the controller mode, so
         // the game keeps detecting keyboard vs gamepad by itself.
 
-        // F8 = manual speech test (does the channel work at all, right now?).
-        // Backquote = repeat the last spoken line. F10 = dump the live UI state to the log
-        // (what is focused, what selectables exist) for diagnosing a screen that stays silent.
-        // Coffee Talk binds none of these.
-        private const KeyCode TestKey = KeyCode.F8;
+        // Backquote = repeat the last spoken line. Coffee Talk binds it nowhere.
         private const KeyCode RepeatKey = KeyCode.BackQuote;
-        private const KeyCode DumpKey = KeyCode.F10;
 
         // Shift+Backquote ("~") = toggle automatic story narration on/off. See DialogueToggle.
         //
@@ -89,18 +84,31 @@ namespace CoffeeTalkAccess
         // F9 is unbound by Coffee Talk, like the three above.
         private const KeyCode StatsKey = KeyCode.F9;
 
-        // R = re-read the customer's drink request while brewing.
+        // Backquote (again) = re-read the customer's drink request, ON THE BREWING SCREENS ONLY.
         //
         // A QUERY key for the same reason F9 is one: the request sits pinned in a chat balloon
         // beside the glass for the whole brew, so a sighted player re-reads it at will. The player
         // heard it once, one screen transition ago, and the puzzle turns on its exact wording.
         //
-        // ⚠ GATED TO THE BREWING SCREENS, unlike the four keys above. Those are function keys and a
-        // backquote - safe to read globally because nothing else wants them. R is a LETTER, and the
-        // name-entry screen has a live InputField that must receive it as typing. Restricting the
-        // key to the two states where a request exists keeps it away from that field entirely.
-        // See Brewing.RequestPatches.
-        private const KeyCode RequestKey = KeyCode.R;
+        // ⚠ THIS IS THE THIRD MEANING ON ONE PHYSICAL KEY, and the three are separated by two
+        // different tests rather than by three keys:
+        //     "~" (shift held)          -> toggle narration      (any screen)
+        //     "`" while brewing         -> speak the request     (BREWING / VIEWING_GLASS)
+        //     "`" anywhere else         -> repeat the last line
+        //
+        // The request WINS over repeat while brewing, which is the player's call and rests on a
+        // property of these two screens specifically: there is no dialogue running here, so the
+        // "last spoken line" a repeat would give back is almost always the mod's own brewing
+        // chatter - an ingredient name or a stats line the player just triggered and can trigger
+        // again. The request is the thing actually worth re-reading, and it is the only place in
+        // the game where that is true. Off these screens repeat is unchanged.
+        //
+        // ⚠ WHY NOT A LETTER. This was R until 2026-08-17, and a letter key is the awkward choice
+        // here: the name-entry screen has a live InputField that must receive letters as typing, so
+        // R needed a state gate to stay out of it. Backquote wants no such gate - Coffee Talk binds
+        // it nowhere - and R is now free for LatteArtPatches to use as reset. See
+        // Brewing.RequestPatches.
+        private const KeyCode RequestKey = KeyCode.BackQuote;
 
         public override void OnInitializeMelon()
         {
@@ -497,34 +505,13 @@ namespace CoffeeTalkAccess
         public override void OnLateInitializeMelon()
         {
             // Announced late so it lands after the game's own startup chatter settles.
-            Speech?.Speak("Coffee Talk Access loaded. Press F8 to test speech.", true);
+            Speech?.Speak("Coffee Talk Access loaded.", true);
         }
 
         // Controller state is logged automatically rather than on an F10 keypress. Three
         // consecutive live runs went by without the dump because pressing a diagnostic key is one
         // more thing to remember mid-test - and without it every controller theory stays a guess.
         // A periodic report costs nothing and means the evidence is simply THERE in the log.
-        private float _nextDeviceReport;
-        private string _lastDeviceReport;
-
-        /// <summary>
-        /// Logs the InControl device list whenever it CHANGES, plus once at startup. Change-driven
-        /// rather than every-N-seconds so plugging or unplugging a pad is visible as an event,
-        /// and a steady state does not flood the log.
-        /// </summary>
-        private void ReportDevicesIfChanged()
-        {
-            if (Time.realtimeSinceStartup < _nextDeviceReport) return;
-            _nextDeviceReport = Time.realtimeSinceStartup + 2f;
-
-            string report = Menus.KeyboardNav.DescribeDevices();
-            if (report == _lastDeviceReport) return;
-
-            _lastDeviceReport = report;
-            MelonLogger.Msg("[Devices] " + report);
-            MelonLogger.Msg("[Devices] controller mode = " + Menus.KeyboardNav.DescribeControllerMode());
-        }
-
         public override void OnUpdate()
         {
             if (Speech == null) return;
@@ -577,149 +564,44 @@ namespace CoffeeTalkAccess
             // open yet while the cafe underneath still owned focus (log 26-8-10_18-17-43: "[Phone]
             // Smartphone..." then "[Focus] Coffee" 82ms later).
             FullGame.SmartPhonePatches.PhoneEntryWatcher.Update();
-            ReportDevicesIfChanged();
 
-            if (Input.GetKeyDown(TestKey))
+            if (Input.GetKeyDown(RepeatKey))
             {
-                Speech.Speak("Speech test. Coffee Talk Access is running.", true);
-                MelonLogger.Msg("[Test] F8 pressed; test line sent to speech channel.");
-            }
-            else if (Input.GetKeyDown(RepeatKey))
-            {
-                // Same key, split by shift: "~" toggles narration, bare "`" repeats.
+                // ⚠ ONE PHYSICAL KEY, THREE MEANINGS - resolved here, in this order, because the
+                // three cannot be told apart by KeyCode alone. RequestKey IS RepeatKey, so this
+                // branch must dispatch both; a separate `else if (RequestKey)` further down would
+                // be unreachable, which is exactly how this went wrong when the request moved off R.
+                //
+                //   shift        -> narration toggle  (checked first: "~" is never a query)
+                //   brewing      -> speak the request (the request outranks repeat HERE only)
+                //   otherwise    -> repeat the last spoken line
                 if (ShiftHeld) Dialogue.DialogueToggle.Toggle();
+                else if (IsBrewingScreen()) Brewing.RequestPatches.SpeakCurrentRequest();
                 else Speech.RepeatLast();
             }
             else if (Input.GetKeyDown(StatsKey))
             {
                 Brewing.StatsPatches.SpeakCurrentStats();
             }
-            else if (Input.GetKeyDown(RequestKey) && IsBrewingScreen())
-            {
-                Brewing.RequestPatches.SpeakCurrentRequest();
-            }
-            else if (Input.GetKeyDown(DumpKey))
-            {
-                DumpUiState();
-            }
         }
 
         /// <summary>
-        /// True on the two screens where a drink request exists and R should answer.
+        /// True on the two screens where a drink request exists and backquote should answer with it
+        /// rather than repeating the last spoken line.
         ///
         /// BREWING is the ingredient-selection screen the request key is for. VIEWING_GLASS is the
         /// serve-options screen that follows it, included because the balloon is still up there and
         /// "did this actually match what they asked for?" is the same question, asked one moment
         /// later - refusing it there would be an arbitrary edge.
         ///
-        /// ⚠ Everything else is excluded so a plain letter key cannot shadow typing. The name-entry
-        /// screen (INPUT_NAME) has a live InputField, and the mod must never eat a character the
-        /// player is trying to type into it.
+        /// ⚠ Everything else is excluded because off these screens backquote means REPEAT, which is
+        /// its meaning everywhere in the mod. This gate selects between two behaviours on one key
+        /// rather than protecting a key from a screen - see the dispatch in OnUpdate.
         /// </summary>
         private static bool IsBrewingScreen()
         {
             string state = ReadControllerState();
             return state == "BREWING" || state == "VIEWING_GLASS";
-        }
-
-        /// <summary>
-        /// Logs what the UI actually looks like right now: the focused object and every
-        /// interactable Selectable on screen. This exists because a screen that stays silent has
-        /// two very different causes - nothing is focused (the game never set selection), or the
-        /// focused object carries no readable text - and they need opposite fixes. Guessing
-        /// between them costs a live run each time, so we ask the game instead.
-        /// </summary>
-        /// <summary>Names a navigation target, distinguishing "no target" from an unnamed object.</summary>
-        private static string NameOf(Selectable s)
-        {
-            return s == null ? "-" : s.gameObject.name;
-        }
-
-        /// <summary>
-        /// The object's ancestry, root first, so the log shows which SCREEN owns a control rather
-        /// than just what it is called. Capped at four levels - enough to name the owning canvas
-        /// without turning every dump line into a paragraph.
-        /// </summary>
-        private static string PathOf(GameObject go)
-        {
-            if (go == null) return "?";
-
-            string path = go.name;
-            Transform t = go.transform.parent;
-            int depth = 0;
-            while (t != null && depth < 4)
-            {
-                path = t.name + "/" + path;
-                t = t.parent;
-                depth++;
-            }
-            return path;
-        }
-
-        private static void DumpUiState()
-        {
-            try
-            {
-                EventSystem es = EventSystem.current;
-                GameObject sel = es != null ? es.currentSelectedGameObject : null;
-                MelonLogger.Msg("[Dump] EventSystem=" + (es == null ? "NULL" : es.name)
-                    + " focused=" + (sel == null ? "NULL" : sel.name));
-
-                // The game's own input state machine decides which screen the arrow keys drive.
-                // Reporting it turns "nothing happens" into a specific answer: a state we do not
-                // narrate yet, versus a state whose handler we hooked but that never fires.
-                MelonLogger.Msg("[Dump] TG state = " + ReadControllerState());
-
-                // What InControl can actually see. Reported here because "the D-pad does nothing"
-                // has three unrelated causes that feel identical to the player, and only the
-                // device list tells them apart.
-                MelonLogger.Msg("[Dump] InControl: " + Menus.KeyboardNav.DescribeDevices());
-
-                Selectable[] all = UnityEngine.Object.FindObjectsOfType<Selectable>();
-                int shown = 0;
-                for (int i = 0; i < all.Length; i++)
-                {
-                    Selectable s = all[i];
-                    if (s == null || !s.gameObject.activeInHierarchy || !s.interactable) continue;
-
-                    // ⚠ REPORT THE NAVIGATION GRAPH, not just the control's existence.
-                    //
-                    // "Arrow keys do nothing" and "there is nowhere to go" look identical in a list
-                    // of names. Navigation.Mode.None means the EventSystem will never move off this
-                    // control no matter what is on screen; Explicit with all-null targets means the
-                    // graph exists but is a dead end. Those are different bugs with different fixes,
-                    // and without the mode + targets printed here the log cannot tell them apart -
-                    // which is what turned a mod-menu report into a second round of guessing.
-                    string nav = s.navigation.mode.ToString();
-                    if (s.navigation.mode == Navigation.Mode.Explicit)
-                    {
-                        nav += " up=" + NameOf(s.navigation.selectOnUp)
-                             + " down=" + NameOf(s.navigation.selectOnDown)
-                             + " left=" + NameOf(s.navigation.selectOnLeft)
-                             + " right=" + NameOf(s.navigation.selectOnRight);
-                    }
-
-                    // ⚠ PRINT WHERE THE CONTROL LIVES, not just its name.
-                    //
-                    // A flat list of names cannot distinguish "the screen owns this control" from
-                    // "this belongs to the screen underneath and is leaking focus". I asserted the
-                    // second about the mod menu from exactly such a list, and the player correctly
-                    // objected that only TWO of the supposed leaks were ever reachable. The parent
-                    // chain is what settles it, and it costs one line.
-                    MelonLogger.Msg("[Dump]   selectable: " + PathOf(s.gameObject)
-                        + " (" + s.GetType().Name + ") nav=" + nav);
-                    if (++shown >= 40) { MelonLogger.Msg("[Dump]   ...truncated"); break; }
-                }
-                MelonLogger.Msg("[Dump] " + shown + " interactable selectable(s) active.");
-
-                Speech.Speak(sel == null
-                    ? "Nothing focused. " + shown + " controls on screen."
-                    : "Focused: " + sel.name + ". " + shown + " controls on screen.", true);
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Warning("[Dump] threw: " + e.Message);
-            }
         }
 
         /// <summary>

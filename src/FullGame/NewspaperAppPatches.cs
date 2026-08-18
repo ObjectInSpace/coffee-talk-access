@@ -110,8 +110,30 @@ namespace CoffeeTalkAccess.FullGame
         {
             try
             {
-                Reset();
-                if (__instance == null) return;
+                // ⚠ DO NOT Reset() HERE. SetNewsOnApp runs INSIDE Open (TG_NewspaperApp:117, before
+                // base.Open at :119), so by the time this POSTFIX runs, AfterSetNewsOnApp has
+                // already loaded _title/_paragraphs and announced the header. Resetting now threw
+                // all of that away and left _paragraphs EMPTY with _open true, so Update's
+                // `_paragraphs.Count == 0` guard swallowed every arrow press and the article could
+                // not be read.
+                //
+                // ⚠ THE SYMPTOM NAMED THE CAUSE, once the ordering was read: opening the app was
+                // dead, but changing DAYS worked - because Left/Right call SetNewsOnApp with no
+                // Open postfix behind them to undo it. Reported as "when I open the newspaper...
+                // down arrow does not scroll" and "if I focus a different article then it works"
+                // (2026-08-17). A screen that works on the second entry and not the first is this
+                // shape of bug: something on the entry path is undoing the setup.
+                //
+                // Clearing the HELD-KEY flags is still right, and is the only part of the old Reset
+                // that belongs here: the keypress that opened the app must not be read as a step.
+                if (__instance == null)
+                {
+                    Reset();
+                    return;
+                }
+
+                _upHeld = false;
+                _downHeld = false;
 
                 _app = __instance;
                 _open = true;
@@ -261,6 +283,34 @@ namespace CoffeeTalkAccess.FullGame
                 if (!IsPanelOpen())
                 {
                     _open = false;
+                    return;
+                }
+
+                // ⚠ A PANEL THAT IS STILL ON SCREEN DOES NOT MEAN IT STILL OWNS THE ARROWS.
+                //
+                // Pausing does NOT tear the phone down: PauseGame raises pauseOverlayPanel and
+                // gamePausedCanvasPanel over it and flips the state to MENU_IN_GAME
+                // (TG_OptionsUIManager:551-557), leaving the newspaper panel active underneath. So
+                // IsPanelOpen stays true and this reader kept stepping paragraphs while the pause
+                // menu moved its own cursor - reported 2026-08-17 as "when I press escape and move
+                // up or down, it moves both cursors".
+                //
+                // This is the same shape as the popup case FocusRecovery documents: the screen
+                // behind a modal keeps responding because nothing disabled it. The answer there and
+                // here is to consult the game's own STATE rather than the panel's visibility - the
+                // state is what the game itself uses to decide who receives input.
+                //
+                // ⚠ DO NOT clear _open here. Pausing is not leaving the app: the player resumes back
+                // into the same article, and dropping the cursor would restart them at the header
+                // having lost their place. We stand down for as long as something else owns input
+                // and pick up exactly where we were.
+                string state = AccessMod.ReadControllerState();
+                if (state != "PHONE_NEWSPAPER" && state != "PHONE_NEWSPAPER_DETAIL")
+                {
+                    // Forget the held-key edges too, so the arrow still being down when the pause
+                    // menu closes is not read as a fresh step the moment we resume.
+                    _upHeld = false;
+                    _downHeld = false;
                     return;
                 }
 

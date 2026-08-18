@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Reflection;
 using HarmonyLib;
 using MelonLoader;
@@ -291,98 +290,6 @@ namespace CoffeeTalkAccess.Menus
                 }
             }
             return added;
-        }
-
-        /// <summary>Resolves the TG_ControllerInputManager singleton, or null if not alive yet.</summary>
-        private static object ResolveInputManager()
-        {
-            Type mgrType = AccessTools.TypeByName("TG_ControllerInputManager");
-            if (mgrType == null) return null;
-
-            Type singleton = AccessTools.TypeByName("TG_GenericSingelton`1");
-            if (singleton == null) return null;
-
-            Type closed = singleton.MakeGenericType(mgrType);
-            return AccessTools.Property(closed, "Instance")?.GetValue(null)
-                   ?? AccessTools.Field(closed, "Instance")?.GetValue(null);
-        }
-
-        /// <summary>
-        /// Reports what InControl can see. Kept as a diagnostic because it is what finally
-        /// explained a "dead" controller: a phantom "Unknown Device" (the raw DualSense, not
-        /// hidden) was winning InControl's most-recent-input race for ActiveDevice, so the game
-        /// polled an unmapped device and read zero on every axis.
-        ///
-        /// ⚠ Every read tries PROPERTY then FIELD. InputManager.Devices is a public static FIELD,
-        /// and reading it as a property returned null, which this probe reported as "Devices
-        /// unreadable" - indistinguishable at a glance from "no controller attached". A diagnostic
-        /// that fails in a way that mimics what it diagnoses is worse than none.
-        /// </summary>
-        internal static string DescribeDevices()
-        {
-            try
-            {
-                Type im = AccessTools.TypeByName("InControl.InputManager");
-                if (im == null) return "InControl.InputManager not found";
-
-                object devices = AccessTools.Field(im, "Devices")?.GetValue(null)
-                                 ?? AccessTools.Property(im, "Devices")?.GetValue(null, null);
-                IList list = devices as IList;
-                if (list == null) return "Devices unreadable (member shape unexpected)";
-
-                object active = AccessTools.Property(im, "ActiveDevice")?.GetValue(null, null)
-                                ?? AccessTools.Field(im, "activeDevice")?.GetValue(null);
-
-                string result = list.Count + " device(s); active=" + (Member(active, "Name") ?? "none");
-                for (int i = 0; i < list.Count; i++)
-                {
-                    object d = list[i];
-                    if (d == null) continue;
-                    result += " | [" + i + "] '" + Member(d, "Name")
-                        + "' class=" + Member(d, "DeviceClass")
-                        + " style=" + Member(d, "DeviceStyle");
-                }
-                return result;
-            }
-            catch (Exception e)
-            {
-                return "threw: " + e.Message;
-            }
-        }
-
-        /// <summary>Reads a member by name whether it is a property or a field.</summary>
-        private static string Member(object obj, string name)
-        {
-            if (obj == null) return null;
-            try
-            {
-                Type t = obj.GetType();
-                object v = AccessTools.Property(t, name)?.GetValue(obj, null)
-                           ?? AccessTools.Field(t, name)?.GetValue(obj);
-                return v?.ToString();
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        /// <summary>Reports the game's current input mode and screen state.</summary>
-        internal static string DescribeControllerMode()
-        {
-            try
-            {
-                object mgr = ResolveInputManager();
-                if (mgr == null) return "input manager not alive";
-
-                object mode = AccessTools.Field(mgr.GetType(), "currentTypeController")?.GetValue(mgr);
-                object state = AccessTools.Field(mgr.GetType(), "currentState")?.GetValue(mgr);
-                return (mode == null ? "?" : mode.ToString()) + ", state=" + (state == null ? "?" : state.ToString());
-            }
-            catch (Exception e)
-            {
-                return "threw: " + e.Message;
-            }
         }
     }
 }

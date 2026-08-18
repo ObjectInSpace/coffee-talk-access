@@ -128,6 +128,12 @@ These are not aspirations; each was paid for with a live run. See `project_statu
 Loader boots, speech reaches NVDA, Harmony patches verified live. F8 test, backquote repeat,
 F10 state dump.
 
+> ⚠ **The development scaffolding was removed 2026-08-17** now that the mod is in use: the F8 speech
+> test (the spoken load message already proves the channel works), the F10 UI dump, and the
+> every-2-seconds `[Devices]` InControl poll that diagnosed a phantom-controller bug long since
+> solved. Backquote repeat stays — it is a player feature, not a diagnostic. If a future silent
+> screen needs diagnosing, the dump is in this file's git history.
+
 ## Phase 1 — menus ✅ DONE (session 2) [recovered]
 
 Language picker, main menu, options, save/load. Keyboard nav supplied by `KeyboardNav`, since the
@@ -263,9 +269,13 @@ The other half of the gameplay loop.
   - Stats are a TOGGLE (`BrewInformationClick` swaps the bars against `brewInfoPanel`), so even
     sighted players do not always see them — a query key matches the game's own model.
 - ✅ **Drink request re-read — BUILT 2026-08-15, untested.** `src/Brewing/RequestPatches.cs`.
-  `R` on `BREWING`/`VIEWING_GLASS` speaks the request pinned beside the glass. A query key for the
-  same reason F9 is one: the balloon is permanently on screen for a sighted player, so the
+  Backquote on `BREWING`/`VIEWING_GLASS` speaks the request pinned beside the glass. A query key for
+  the same reason F9 is one: the balloon is permanently on screen for a sighted player, so the
   accessible equivalent answers on demand rather than repeating unprompted.
+  - ⚠ **Moved off `R` 2026-08-17.** Backquote is the mod's existing query key (repeat-last-line), and
+    on the brewing screens the request now OUTRANKS repeat: no dialogue runs there, so the last
+    spoken line is almost always the mod's own brewing chatter, which the player can re-trigger
+    anyway. Shift+backquote still toggles narration, checked first. `R` is now latte art's reset.
   - ⚠ **Reads the BALLOON, never the branching rules.** `TG_DialogueManager._ruleList` (installed by
     `TG_BrewingCommand:26`) is the ANSWER KEY — `CheckDrink` grades the finished drink against it —
     so speaking it would dictate the exact ingredients and delete the puzzle. `chatBallonBrewingText`

@@ -40,9 +40,19 @@ namespace CoffeeTalkAccess.Brewing
     /// covers both modes with one implementation and cannot drift from what is drawn, because it IS
     /// what is drawn.
     ///
-    /// WHY R. Unbound by the game (KeyboardPlayerActions binds Return/Space/Tab/arrows/WASD/E/Q/
-    /// Escape/Control, :50-65) and by the mod. "R" for request, and it sits under the same hand as
-    /// the arrow keys the player is navigating ingredients with.
+    /// WHY BACKQUOTE. Unbound by the game (KeyboardPlayerActions binds Return/Space/Tab/arrows/
+    /// WASD/E/Q/Escape/Control, :50-65), and already the mod's query key - it repeats the last
+    /// spoken line everywhere else, so "ask again" is the meaning the player already has for it.
+    ///
+    /// ⚠ ON THESE TWO SCREENS IT SPEAKS THE REQUEST INSTEAD OF REPEATING, which is a deliberate
+    /// precedence rather than a collision. There is no dialogue running while brewing, so the "last
+    /// spoken line" a repeat would return is almost always the mod's own brewing chatter - an
+    /// ingredient name or a stats line the player just triggered and can trigger again at will. The
+    /// request is the thing worth re-reading here. The dispatch and the shift-toggle interaction
+    /// live in AccessMod.OnUpdate; this method just answers.
+    ///
+    /// This was R until 2026-08-17. A letter key needed a state gate to stay clear of the
+    /// name-entry InputField, and R is now latte art's reset key (see LatteArtPatches).
     /// </summary>
     [HarmonyPatch]
     public static class RequestPatches

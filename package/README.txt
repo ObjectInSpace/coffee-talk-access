@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.4
+Version 0.9.5
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,31 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.4
+WHAT IS NEW IN 0.9.5
+
+  - Latte art answers the keyboard. Enter serves the drink (and it counts as
+    having latte art), Backspace goes back without serving, and the four
+    tools are on Up, Left, Down and R. Before this the screen could only be
+    left by serving with a gamepad, or not at all.
+
+  - The newspaper on the phone can be read again. Opening it left the reader
+    with nothing loaded, so the arrow keys did nothing until you changed to a
+    different day. Opening a day now reads straight away.
+
+  - Pausing no longer moves two cursors at once. While the newspaper was open,
+    Escape brought up the pause menu but the article kept stepping under it,
+    so one arrow press moved both. The pause menu now has it to itself, and
+    you come back to the paragraph you left.
+
+  - The drink request moved from R to backquote, which frees R for latte art's
+    reset. Backquote already meant "say that again", so it is the same idea.
+
+  - The F8 speech test and the F10 interface dump are gone. Both were
+    development tools; hearing the mod announce itself at startup is the same
+    proof F8 gave.
+
+
+WHAT WAS NEW IN 0.9.4
 
   - H opens the conversation history from anywhere in the cafe, and H closes
     it again. Until now that screen could only be opened with a gamepad's Y
@@ -18,11 +42,13 @@ WHAT IS NEW IN 0.9.4
     even though the mod could already read it. Up and down move through the
     conversation a line at a time, and it tells you when you reach either end.
 
-  - R reads the customer's request back to you while you are brewing. Their
-    order stays on screen beside the glass for the whole brew, so a sighted
-    player can glance at it whenever they like; by ear you heard it once,
-    before the screen changed. R repeats it as often as you want, and also
-    works on the serve screen afterwards.
+  - Backquote reads the customer's request back to you while you are brewing.
+    Their order stays on screen beside the glass for the whole brew, so a
+    sighted player can glance at it whenever they like; by ear you heard it
+    once, before the screen changed. Backquote repeats it as often as you
+    want, and also works on the serve screen afterwards. (This was R before
+    0.9.5. Off the brewing screens backquote still repeats the last line
+    spoken, as it always has.)
 
   - Pressing Enter to finish a conversation no longer drops coffee into the
     glass. The keypress that closed the dialogue was also reaching the
@@ -230,8 +256,8 @@ HOW TO INSTALL
    put them in Mods, speech will either be silent or quietly fall back to SAPI
    instead of using NVDA.
 
-5. Start the game. You should hear "Coffee Talk Access loaded. Press F8 to
-   test speech."
+5. Start the game. You should hear "Coffee Talk Access loaded." Hearing that
+   line is itself the proof that speech is working.
 
 
 KEYS THE MOD ADDS
@@ -248,6 +274,10 @@ KEYS THE MOD ADDS
                        still the phone.
   Backquote  ( ` )     Repeat the last thing that was spoken. This is the key
                        to the left of the 1 key, above Tab.
+                       While you are brewing, it repeats what the CUSTOMER asked
+                       for instead, because that is the thing worth hearing
+                       again there. It goes back to repeating the last line
+                       everywhere else.
   Tilde  ( ~ )         The SAME key with shift held. Turns the reading of the
                        in-game conversation on and off, and says which it just
                        switched to. Use it if you already know the story, or
@@ -261,13 +291,7 @@ KEYS THE MOD ADDS
                        close. Works during conversations, while brewing, and
                        with the phone open. The game itself offers this only on
                        a gamepad's Y button. Up and down move a line at a time.
-  R                    While brewing, repeat what the customer asked for. Also
-                       works on the serve screen after the drink is made.
-  F8                 Speech test. Speaks a test line so you can check the
-                       speech channel is alive.
   F9                   On the brewing screen, speak the current drink's stats.
-  F10                  Dump the current interface state into the log. This is
-                       for reporting problems, and it speaks nothing.
 
 
 THE PROFILE PICKER (FULL GAME)
@@ -388,9 +412,19 @@ KNOWN LIMITS
 
   - Switching TO a gamepad jumps the cursor to the first profile. That is the
     game moving its own cursor; it does the same without the mod.
-  - Latte art is a drawing minigame. Only whether you served the drink is
-    scored, not the picture, so the mod lets you serve without drawing. The
-    drawing itself is still not accessible.
+  - Latte art is a drawing minigame. Only WHETHER you served the drink is
+    scored, never the picture, so serving without drawing counts in full - a
+    request that asks for latte art will be satisfied. The drawing itself
+    still needs a mouse and is not accessible.
+    New in 0.9.5, the screen answers the keyboard. The game gave each action
+    its own gamepad button rather than a moving cursor, so the keys work the
+    same way - there is nothing to focus, you just press the one you want:
+      Enter        Serve the drink, with latte art credited.
+      Backspace    Go back to the serve options without it.
+      Up           Pour milk (the tool it starts on).
+      Left         Etch.
+      Down         Invert the flow.
+      R            Reset the cup.
   - On the profile picker, deleting a profile needs a gamepad (X button). The
     game provides no keyboard key for it, and the mod does not invent one for
     an action that cannot be undone.

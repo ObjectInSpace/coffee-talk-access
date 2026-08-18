@@ -6,7 +6,49 @@ language picker, name entry, the opening cutscene, story dialogue and the brewin
 through NVDA, JAWS, SAPI or a braille display, and it supplies keyboard navigation for menus
 that the game otherwise only lets you drive with a gamepad.
 
-Installation instructions for players are in [package/README.txt](package/README.txt).
+## Installing
+
+Download the latest release zip from
+[Releases](https://github.com/ObjectInSpace/coffee-talk-access/releases), then:
+
+1. Install **MelonLoader v0.7.1 (x86)** into your Coffee Talk folder — the one containing
+   `CoffeeTalk.exe`. It is normally one of:
+
+   ```
+   C:\Program Files (x86)\Steam\steamapps\common\Coffee Talk
+   C:\Program Files (x86)\Steam\steamapps\common\Coffee Talk Demo
+   ```
+
+   Yours may be on another drive; in Steam, right-click the game → Manage → Browse local files.
+
+   ⚠ Coffee Talk is a 32-bit game. Set the architecture to **x86** in the MelonLoader installer,
+   or the mod will not load at all. Confirm afterwards in `MelonLoader\Latest.log`, which should
+   contain `Game Arch: x86`.
+
+2. Run the game once and close it, so MelonLoader creates its `Mods` folder.
+
+3. From the zip, copy both files in `Mods\` into the game's `Mods` folder:
+
+   ```
+   CoffeeTalkAccess.dll
+   UnityAccessibilityLib.dll
+   ```
+
+4. From the zip, copy both files in `GameRoot\` into the game's main folder, next to
+   `CoffeeTalk.exe`:
+
+   ```
+   UniversalSpeech.dll
+   nvdaControllerClient.dll
+   ```
+
+   ⚠ These two must sit next to `CoffeeTalk.exe`, **not** in `Mods`. Put them in `Mods` and
+   speech will either be silent or quietly fall back to SAPI instead of using NVDA.
+
+5. Start the game. You should hear "Coffee Talk Access loaded."
+
+The full player guide — every key the mod adds, plus troubleshooting — ships in the zip and is
+also in [package/README.txt](package/README.txt).
 
 ## Building
 
@@ -51,16 +93,12 @@ because a 64-bit build fails at the first spoken word and nowhere earlier.
 
 `decompiled/` is not tracked: it holds decompiled game code, which belongs to Toge Productions.
 
-## Credits and prior art
+## Credits
 
 Speech goes through [UnityAccessibilityLib](https://www.nuget.org/packages/UnityAccessibilityLib)
 and in turn UniversalSpeech. Patching is [HarmonyX](https://github.com/BepInEx/HarmonyX) under
 [MelonLoader](https://melonwiki.xyz/). The game's dialogue engine is
 [Fungus](https://github.com/snozbot/fungus).
-
-There is an earlier, independent Coffee Talk access mod by
-[hellblade940](https://github.com/hellblade940/coffee-talk-access-mod/), taking a
-clipboard-and-polling approach. No code is shared with it.
 
 Coffee Talk is a game by Toge Productions. This is an unofficial fan-made accessibility mod
 and is not affiliated with or endorsed by them.
