@@ -24,7 +24,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.6", "amock")]
+[assembly: MelonInfo(typeof(CoffeeTalkAccess.AccessMod), "Coffee Talk Access", "0.9.5", "amock")]
 [assembly: MelonGame("Toge Productions", "CoffeeTalk")]
 
 namespace CoffeeTalkAccess

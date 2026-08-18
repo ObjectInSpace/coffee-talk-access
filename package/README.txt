@@ -1,6 +1,6 @@
 COFFEE TALK ACCESS
 A screen reader mod for Coffee Talk
-Version 0.9.6
+Version 0.9.5
 
 This mod makes Coffee Talk speak through your screen reader. It reads menus,
 the profile picker, the language picker, the name entry screen, the opening
@@ -10,7 +10,7 @@ navigation to menus that the game only lets you drive with a gamepad.
 Works with NVDA, JAWS, SAPI, and braille displays, through UniversalSpeech.
 
 
-WHAT IS NEW IN 0.9.6
+WHAT IS NEW IN 0.9.5
 
   - Endless mode's brewing screen works with the keyboard. The ingredients
     never took focus when a run started, so the arrow keys had nothing to
@@ -21,9 +21,6 @@ WHAT IS NEW IN 0.9.6
     it" and "latte art" could not be reached there at all. Endless mode has
     its own copy of that screen, with the same gap the story mode's had in
     0.9.3, so the earlier fix never applied to it.
-
-
-WHAT WAS NEW IN 0.9.5
 
   - Latte art answers the keyboard. Enter serves the drink (and it counts as
     having latte art), Backspace goes back without serving, and the four
@@ -55,13 +52,12 @@ WHAT WAS NEW IN 0.9.4
     even though the mod could already read it. Up and down move through the
     conversation a line at a time, and it tells you when you reach either end.
 
-  - Backquote reads the customer's request back to you while you are brewing.
+  - The customer's request can be read back to you while you are brewing.
     Their order stays on screen beside the glass for the whole brew, so a
     sighted player can glance at it whenever they like; by ear you heard it
-    once, before the screen changed. Backquote repeats it as often as you
-    want, and also works on the serve screen afterwards. (This was R before
-    0.9.5. Off the brewing screens backquote still repeats the last line
-    spoken, as it always has.)
+    once, before the screen changed. This key repeats it as often as you
+    want, and also works on the serve screen afterwards. (It was R in 0.9.4
+    and is backquote from 0.9.5 on - see above.)
 
   - Pressing Enter to finish a conversation no longer drops coffee into the
     glass. The keypress that closed the dialogue was also reaching the
@@ -420,7 +416,7 @@ KNOWN LIMITS
     chat log is newly reachable from the keyboard in 0.9.4 (press H), so it
     is the most likely place to find rough edges in this release.
   - Endless mode's keyboard navigation arrived in 0.9.4 and its brewing
-    screens were fixed in 0.9.6. Mode select, the brew pad, the serve options
+    screens were fixed in 0.9.5. Mode select, the brew pad, the serve options
     and the end-of-run screen have all been played through on a keyboard now.
     The end-of-run screen has had the least exercise of those.
 
